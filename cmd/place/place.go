@@ -80,10 +80,18 @@ func main() {
 
 func loadImage(loadPath string) draw.Image {
 	f, err := os.Open(loadPath)
-	defer f.Close()
+
 	if err != nil {
+		if _, ok := err.(*os.PathError); ok {
+			nrgba := image.NewNRGBA(image.Rect(0, 0, width, height))
+			for i := range nrgba.Pix {
+				nrgba.Pix[i] = 255
+			}
+			return nrgba
+		}
 		panic(err)
 	}
+	defer f.Close()
 	pngimg, err := png.Decode(f)
 	if err != nil {
 		panic(err)
