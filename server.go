@@ -32,20 +32,29 @@ var upgrader = websocket.Upgrader{
 
 type Server struct {
 	sync.RWMutex
-	msgs    chan []byte
-	close   chan int
-	clients []chan []byte
-	img     draw.Image
-	imgBuf  []byte
+	msgs         chan []byte
+	close        chan int
+	clients      []chan []byte
+	img          draw.Image
+	imgBuf       []byte
+	historyLines []PixelHistory
+}
+
+type PixelHistory struct {
+	x int
+	y int
+	c color.Color
 }
 
 func NewServer(img draw.Image, count int) *Server {
+	historyLine := []PixelHistory{}
 	sv := &Server{
-		RWMutex: sync.RWMutex{},
-		msgs:    make(chan []byte),
-		close:   make(chan int),
-		clients: make([]chan []byte, count),
-		img:     img,
+		RWMutex:      sync.RWMutex{},
+		msgs:         make(chan []byte),
+		close:        make(chan int),
+		clients:      make([]chan []byte, count),
+		img:          img,
+		historyLines: historyLine,
 	}
 	go sv.broadcastLoop()
 	return sv
@@ -117,7 +126,7 @@ func rateLimiter() func() bool {
 
 	// Minimum time difference between messages
 	// Network sometimes delivers two messages in quick succession
-	const minDif = int64(time.Millisecond * 50)
+	const minDif = int64(time.Millisecond * 500)
 
 	last := time.Now().UnixNano()
 	var v float32 = 1.0
@@ -216,8 +225,30 @@ func (sv *Server) setPixel(x, y int, c color.Color) bool {
 		return false
 	}
 	sv.img.Set(x, y, c)
+
+	sv.historyLines = append(sv.historyLines, PixelHistory{
+		x: x,
+		y: y,
+		c: c,
+	})
 	sv.imgBuf = nil
 	return true
+}
+
+func (sv *Server) GetHistoryByte() []byte {
+	if len(sv.historyLines) == 0 {
+		return []byte{}
+	}
+	var historyString bytes.Buffer
+	for _, v := range sv.historyLines {
+		r, g, b, a := v.c.RGBA()
+		historyString.WriteString(fmt.Sprintf("%v %v %v %v %v %v \n", v.x, v.y, r, g, b, a))
+	}
+	return historyString.Bytes()
+}
+
+func (sv *Server) ClearMemoryHistory() {
+	sv.historyLines = []PixelHistory{}
 }
 
 func parseEvent(b []byte) (int, int, color.Color) {

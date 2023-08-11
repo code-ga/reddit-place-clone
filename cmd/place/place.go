@@ -3,12 +3,15 @@ package main
 import (
 	"crypto/tls"
 	"flag"
+	"fmt"
 	"image"
 	"image/draw"
 	"image/png"
+	"io/fs"
 	"log"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/rbxb/httpfilter"
@@ -57,7 +60,17 @@ func main() {
 	} else {
 		img = loadImage(loadPath)
 	}
+
 	placeSv := place.NewServer(img, count)
+	path := "./history"
+	if _, err := os.Stat(path); os.IsNotExist(err) {
+		err := os.Mkdir(path, fs.ModeAppend)
+		if err != nil {
+			log.Println(err)
+		}
+	}
+	os.WriteFile("./history/place.png", placeSv.GetImageBytes(), 0644)
+
 	defer os.WriteFile(savePath, placeSv.GetImageBytes(), 0644)
 	go func() {
 		for {
@@ -65,6 +78,19 @@ func main() {
 			time.Sleep(time.Second * time.Duration(saveInterval))
 		}
 	}()
+
+	go func() {
+		for {
+			historyPath := fmt.Sprintf("./history/place-history-%v.txt", strings.ReplaceAll(strings.ReplaceAll(time.Now().UTC().String(), " ", "-"), ":", "-"))
+			historyByte := placeSv.GetHistoryByte()
+			if len(historyByte) != 0 {
+				os.WriteFile(historyPath, placeSv.GetHistoryByte(), 0644)
+			}
+			placeSv.ClearMemoryHistory()
+			time.Sleep(time.Minute * 15)
+		}
+	}()
+	defer os.WriteFile(fmt.Sprintf("./history/place-history-%v.txt", strings.ReplaceAll(strings.ReplaceAll(time.Now().UTC().String(), " ", "-"), ":", "-")), placeSv.GetHistoryByte(), 0644)
 	fs := httpfilter.NewServer(root, "", map[string]httpfilter.OpFunc{
 		"place": func(w http.ResponseWriter, req *http.Request, args ...string) {
 			placeSv.ServeHTTP(w, req)
