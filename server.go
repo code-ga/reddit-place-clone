@@ -126,7 +126,7 @@ func rateLimiter() func() bool {
 
 	// Minimum time difference between messages
 	// Network sometimes delivers two messages in quick succession
-	const minDif = int64(time.Millisecond * 500)
+	const minDif = int64(time.Millisecond * 100)
 
 	last := time.Now().UnixNano()
 	var v float32 = 1.0
