@@ -1,6 +1,6 @@
 import { io } from "https://cdn.jsdelivr.net/npm/socket.io-client@4.7.1/+esm";
 
-class Place {
+export default class Place {
   #loaded;
   #socket;
   #loadingp;
@@ -31,7 +31,7 @@ class Place {
       wsProt = "ws:";
     }
 
-    this.#connect(wsProt + "//" + host + "/ws");
+    this.#connect(wsProt + "//" + host);
     this.#loadingp.innerHTML = "downloading map";
 
     fetch(window.location.protocol + "//" + host + "/place.png").then(
@@ -41,8 +41,8 @@ class Place {
           return null;
         }
 
-        let buf = await this.#downloadProgress(resp);
-        await this.#setImage(buf);
+        // let buf = await this.#downloadProgress(resp);
+        await this.#setImage(await resp.arrayBuffer());
 
         this.#loaded = true;
         this.#loadingp.innerHTML = "";
@@ -72,9 +72,14 @@ class Place {
   #connect(path) {
     this.#socket = io(path, { transports: ["websocket"] });
 
-    this.#socket.on("place", (x, y, color) =>
-      this.#handleSocketSetPixel(x, y, color)
-    );
+    this.#socket.on("connect", () => {
+      console.log("Connected to WebSocket.");
+    });
+
+    this.#socket.on("place", (x, y, color) => {
+      console.log("place", x, y, color);
+      this.#handleSocketSetPixel(x, y, color);
+    });
 
     this.#socket.on("disconnect", () => {
       this.#socket = null;
@@ -90,7 +95,7 @@ class Place {
 
   setPixel(x, y, color) {
     if (this.#socket != null && this.#socket.connected) {
-      this.#socket.emit("place", x, y, color);
+      this.#socket.emit("place", Math.floor(x), Math.floor(y), color);
       this.#glWindow.setPixelColor(x, y, color);
       this.#glWindow.draw();
     } else {
@@ -120,15 +125,5 @@ class Place {
       img.onerror = reject;
     });
     await promise;
-  }
-
-  #putUint32(b, offset, n) {
-    let view = new DataView(b);
-    view.setUint32(offset, n, false);
-  }
-
-  #getUint32(b, offset) {
-    let view = new DataView(b);
-    return view.getUint32(offset, false);
   }
 }

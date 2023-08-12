@@ -3,6 +3,7 @@
   <head>
     <title>Place</title>
     <link rel="stylesheet" href="desktop.css" />
+    <meta http-equiv="content-type" content="text/html; charset=utf-8" />
     <meta
       name="viewport"
       content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"
@@ -77,10 +78,11 @@
         <strong>Close me.</strong>
       </button>
     </div>
-    <script src="main.js"></script>
-    <script src="place.js"></script>
-    <script src="glwindow.js"></script>
-    <script>
+    <script type="module" src="main.js"></script>
+    <script type="module" src="place.js"></script>
+    <script type="module" src="glwindow.js"></script>
+    <script type="module">
+      import main from "./main.js";
       main();
     </script>
   </body>

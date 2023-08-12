@@ -1,4 +1,7 @@
-function main() {
+import GLWindow from "./glwindow.js";
+import Place from "./place.js";
+
+export default function main() {
   let cvs = document.querySelector("#viewport-canvas");
   let glWindow = new GLWindow(cvs);
 

@@ -42,7 +42,9 @@ setInterval(saveCanvas, 1000 * Number(process.env.SAVE_INTERVAL || 60));
 
 app.get("/place.png", (request, response) => {
   const png = new PNG({ width, height });
-  png.data = Buffer.from(canvas.buffer);
+  png.data = Buffer.from(canvas);
+  response.setHeader("Content-Type", "image/png");
+  response.setHeader("Cache-Control", "no-cache");
   png.pack().pipe(response);
 });
 
@@ -67,7 +69,7 @@ io.on("connection", (socket) => {
   });
 });
 
-const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => {
-  console.log(`Server is running on port ${PORT}`);
+const port = 80;
+server.listen(port, () => {
+  console.log(`Server is running on port ${port}`);
 });
