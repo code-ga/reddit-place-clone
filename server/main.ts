@@ -60,6 +60,10 @@ io.on("connection", (socket) => {
 
     console.log("Received place:", x, y, color);
     io.emit("place", x, y, color);
+    const index = (y * width + x) * 3;
+    canvas[index] = color[0];
+    canvas[index + 1] = color[1];
+    canvas[index + 2] = color[2];
   });
 });
 
