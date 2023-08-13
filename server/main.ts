@@ -45,7 +45,7 @@ app.get("/place.png", (request, response) => {
   const png = new PNG({ width, height });
   png.data = Buffer.from(canvas);
   response.setHeader("Content-Type", "image/png");
-  response.setHeader("Cache-Control", "no-cache");
+  response.setHeader("Cache-Control", "max-age=0");
   png.pack().pipe(response);
 });
 
