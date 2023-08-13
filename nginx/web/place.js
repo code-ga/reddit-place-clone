@@ -82,6 +82,9 @@ export default class Place {
 
     this.#socket.on("disconnect", () => {
       this.#socket = null;
+      setTimeout(() => {
+        this.#connect(path);
+      }, 500);
     });
 
     this.#socket.on("error", () => {
