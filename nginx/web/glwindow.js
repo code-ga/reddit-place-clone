@@ -139,12 +139,16 @@ export default class GLWindow {
   }
 
   setPixelColor(x, y, color) {
-    let rgba = new Uint8Array(4);
+    console.log("setPixelColor");
+    console.log(color);
+    const rgba = new Uint8Array(4);
     rgba[3] = 255;
 
     rgba[0] = color[0];
     rgba[1] = color[1];
     rgba[2] = color[2];
+
+    console.log(rgba);
 
     this.#gl.texSubImage2D(
       this.#gl.TEXTURE_2D,

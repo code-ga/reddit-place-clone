@@ -14,20 +14,21 @@ const app = express();
 const server = http.createServer(app);
 const io = new Server(server);
 
-let canvas: Uint8Array;
+let canvas: Uint8Array = Uint8Array.from(
+  { length: width * height * 4 },
+  () => 255
+); // rgba canvas
 
 const placeFile = process.env.PLACE_FILE || "place.png";
 const placeFileStat = lstatSync(placeFile, { throwIfNoEntry: false });
 if (placeFileStat && placeFileStat.isFile()) {
   const lastSavedCanvas = await pixel(placeFile);
-  canvas = lastSavedCanvas.data;
-} else {
-  canvas = Uint8Array.from({ length: width * height * 3 }, () => 255);
+  canvas = Uint8Array.from(lastSavedCanvas.data);
 }
 
 function saveCanvas() {
   const png = new PNG({ width, height });
-  png.data = Buffer.from(canvas.buffer);
+  png.data = Buffer.from(canvas);
   png.pack().pipe(createWriteStream(placeFile));
 }
 
@@ -62,7 +63,7 @@ io.on("connection", (socket) => {
 
     console.log("Received place:", x, y, color);
     io.emit("place", x, y, color);
-    const index = (y * width + x) * 3;
+    const index = (y * width + x) * 4;
     canvas[index] = color[0];
     canvas[index + 1] = color[1];
     canvas[index + 2] = color[2];

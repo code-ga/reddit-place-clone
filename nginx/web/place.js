@@ -77,8 +77,7 @@ export default class Place {
     });
 
     this.#socket.on("place", (x, y, color) => {
-      console.log("place", x, y, color);
-      this.#handleSocketSetPixel(x, y, color);
+      this.#handleSocketSetPixel(x, y, new Uint8Array(color));
     });
 
     this.#socket.on("disconnect", () => {
