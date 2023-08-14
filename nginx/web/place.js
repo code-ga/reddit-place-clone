@@ -78,8 +78,6 @@ class Place {
     );
 
     const socketMessage = async (event) => {
-      console.log("Message from server: ", event);
-
       let b = await event.data.arrayBuffer();
       this.#handleSocketSetPixel(b);
     };

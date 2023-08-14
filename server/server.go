@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/binary"
 	"fmt"
 	"image"
 	"image/color"
@@ -19,6 +20,7 @@ const (
 	saveInterval = 60 // seconds
 	pingInterval = 30 // seconds
 	canvasFile   = "data/place.png"
+	connections  = 1000
 )
 
 var (
@@ -28,6 +30,7 @@ var (
 		ReadBufferSize:  1024,
 		WriteBufferSize: 1024,
 	}
+	clients = make([]*websocket.Conn, 1000)
 )
 
 func initCanvas() {
@@ -117,12 +120,8 @@ func placeSocketHandler(w http.ResponseWriter, r *http.Request) {
 		fmt.Println("Error upgrading connection:", err)
 		return
 	}
-	defer conn.Close()
 
-	conn.SetPongHandler(func(msg string) error {
-		fmt.Println("Received pong")
-		return nil
-	})
+	clients = append(clients, conn)
 
 	go func() {
 		pingTicker := time.NewTicker(pingInterval * time.Second)
@@ -131,10 +130,10 @@ func placeSocketHandler(w http.ResponseWriter, r *http.Request) {
 		for {
 			select {
 			case <-pingTicker.C:
-				fmt.Println("Sending ping")
-				err := conn.WriteMessage(websocket.BinaryMessage, []byte("ping"))
+				err := conn.WriteMessage(websocket.PingMessage, []byte{})
 				if err != nil {
 					fmt.Println("Error sending ping:", err)
+					conn.Close()
 					return
 				}
 			}
@@ -149,12 +148,47 @@ func placeSocketHandler(w http.ResponseWriter, r *http.Request) {
 			} else {
 				fmt.Println("Error reading message:", err)
 			}
+			conn.Close()
 			return
 		}
 
 		if len(message) != 11 {
-
+			conn.Close()
 		}
+
+		x := binary.BigEndian.Uint32(message[0:4])
+		y := binary.BigEndian.Uint32(message[4:8])
+
+		if x >= width || y >= height {
+			conn.Close()
+			return
+		}
+
+		color := message[8:11]
+		r := uint8(color[0])
+		g := uint8(color[1])
+		b := uint8(color[2])
+
+		canvasMutex.Lock()
+
+		index := 4 * ((y * width) + x)
+
+		canvas[index] = r
+		canvas[index+1] = g
+		canvas[index+2] = b
+
+		canvasMutex.Unlock()
+
+		for client := range clients {
+			err = clients[client].WriteMessage(websocket.BinaryMessage, message)
+			if err != nil {
+				fmt.Println("Error writing message:", err)
+				clients[client].Close()
+				clients[client] = nil
+				return
+			}
+		}
+
 	}
 }
 
