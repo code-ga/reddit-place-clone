@@ -1,26 +1,21 @@
-# Use an official Go runtime as the build stage base image
-FROM golang:1.17-alpine AS build
-
-# Set the working directory inside the container
-WORKDIR /app
-
-# Copy the Go application source code into the container
+FROM golang:alpine as golang-compiler
+WORKDIR /build
+ENV CGO_ENABLED=0
+COPY go.* .
+RUN go mod download
 COPY . .
+RUN --mount=type=cache,target=/root/.cache/go-build go build -o place .
 
-# Build the Go application
-RUN go build -o app
 
-# Use a minimal base image for the final deployment stage
-FROM alpine:3.14
+FROM golang:alpine as golang-remover
+WORKDIR /app
+COPY --from=golang-compiler /build/place ./
 
-# Set the working directory inside the container
+FROM alpine
 WORKDIR /app
 
-# Copy the built binary from the build stage
-COPY --from=build /app/app .
+COPY --from=golang-remover /app/place ./
 
-# Expose the port the application will listen on
-EXPOSE 8080
+EXPOSE 80
 
-# Command to run the application
-CMD ["./app"]
+CMD [ "/app/place --save /place/place.png" ]

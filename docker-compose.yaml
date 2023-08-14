@@ -1,0 +1,17 @@
+version: "3"
+services:
+  place:
+    image: place
+    build:
+      context: ./server/
+      dockerfile: Dockerfile
+    volumes:
+      - ./data:/place
+
+  nginx:
+    image: place-nginx
+    build:
+      context: ./nginx/
+      dockerfile: Dockerfile
+    ports:
+      - "80:80"

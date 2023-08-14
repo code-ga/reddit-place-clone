@@ -14,6 +14,7 @@ class Place {
   }
 
   async initConnection() {
+    this.#uiwrapper.setAttribute("hide", false);
     this.#loadingp.innerHTML = "connecting";
 
     let host = window.location.hostname;

@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/binary"
+	"flag"
 	"fmt"
 	"image"
 	"image/color"
@@ -14,13 +15,14 @@ import (
 	"github.com/gorilla/websocket"
 )
 
-const (
-	width        = 1280
-	height       = 720
-	saveInterval = 60 // seconds
-	pingInterval = 30 // seconds
-	canvasFile   = "data/place.png"
-	connections  = 1000
+var (
+	address      = *flag.String("address", ":80", "Address to listen on")
+	width        = *flag.Int("width", 1280, "Width of the canvas")
+	height       = *flag.Int("height", 720, "Height of the canvas")
+	saveInterval = *flag.Int("save-interval", 60, "Interval to save the canvas (in seconds)")
+	pingInterval = *flag.Int("ping-interval", 30, "Interval to ping clients (in seconds)")
+	canvasFile   = *flag.String("save", "place.png", "File to save the canvas to")
+	connections  = *flag.Int("connections", 5000, "Maximum number of connections")
 )
 
 var (
@@ -30,7 +32,7 @@ var (
 		ReadBufferSize:  1024,
 		WriteBufferSize: 1024,
 	}
-	clients = make([]*websocket.Conn, 1000)
+	clients = make([]*websocket.Conn, connections)
 )
 
 func initCanvas() {
@@ -61,6 +63,36 @@ func initCanvas() {
 				canvas[index+3] = uint8(255)
 			}
 		}
+	} else {
+		fmt.Println("Making new canvas...")
+
+		canvasMutex.Lock()
+
+		for y := 0; y < height; y++ {
+			for x := 0; x < width; x++ {
+				index := 4 * ((y * width) + x)
+				canvas[index] = uint8(255)
+				canvas[index+1] = uint8(255)
+				canvas[index+2] = uint8(255)
+				canvas[index+3] = uint8(255)
+			}
+		}
+
+		canvasMutex.Unlock()
+
+		saveCanvas()
+	}
+}
+
+func copyCanvasToImage(img *image.RGBA) {
+	for y := 0; y < height; y++ {
+		for x := 0; x < width; x++ {
+			index := 4 * ((y * width) + x)
+			r := uint8(canvas[index])
+			g := uint8(canvas[index+1])
+			b := uint8(canvas[index+2])
+			img.Set(x, y, color.RGBA{r, g, b, 255})
+		}
 	}
 }
 
@@ -68,53 +100,43 @@ func saveCanvas() {
 	canvasMutex.Lock()
 	defer canvasMutex.Unlock()
 
-	file, err := os.Create(canvasFile)
+	if _, err := os.Stat(canvasFile); err != nil {
+		file, err := os.Create(canvasFile)
+		if err != nil {
+			fmt.Println("Error creating canvas file:", err)
+			return
+		}
+		defer file.Close()
+	}
+
+	file, err := os.OpenFile(canvasFile, os.O_WRONLY, 0600)
 	if err != nil {
-		fmt.Println("Error creating canvas file:", err)
+		fmt.Println("Error opening canvas file:", err)
 		return
 	}
 	defer file.Close()
 
 	img := image.NewRGBA(image.Rect(0, 0, width, height))
-	for y := 0; y < height; y++ {
-		for x := 0; x < width; x++ {
-			index := 4 * ((y * width) + x)
-			r := uint32(canvas[index])
-			g := uint32(canvas[index+1])
-			b := uint32(canvas[index+2])
-			a := uint32(255)
-			img.Set(x, y, color.RGBA{uint8(r), uint8(g), uint8(b), uint8(a)})
-		}
-	}
+	copyCanvasToImage(img)
 
-	err = png.Encode(file, img)
-	if err != nil {
+	if err = png.Encode(file, img); err != nil {
 		fmt.Println("Error encoding canvas to PNG:", err)
 	}
 }
 
-func placeHandler(w http.ResponseWriter, r *http.Request) {
+func placepng(w http.ResponseWriter, r *http.Request) {
 	canvasMutex.Lock()
 	defer canvasMutex.Unlock()
 
 	img := image.NewRGBA(image.Rect(0, 0, width, height))
-	for y := 0; y < height; y++ {
-		for x := 0; x < width; x++ {
-			index := 4 * ((y * width) + x)
-			r := uint32(canvas[index])
-			g := uint32(canvas[index+1])
-			b := uint32(canvas[index+2])
-			a := uint32(255)
-			img.Set(x, y, color.RGBA{uint8(r), uint8(g), uint8(b), uint8(a)})
-		}
-	}
+	copyCanvasToImage(img)
 
 	w.Header().Set("Content-Type", "image/png")
 	w.Header().Set("Cache-Control", "max-age=0")
 	png.Encode(w, img)
 }
 
-func placeSocketHandler(w http.ResponseWriter, r *http.Request) {
+func wsHandler(w http.ResponseWriter, r *http.Request) {
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		fmt.Println("Error upgrading connection:", err)
@@ -123,10 +145,10 @@ func placeSocketHandler(w http.ResponseWriter, r *http.Request) {
 
 	clients = append(clients, conn)
 
-	go func() {
-		pingTicker := time.NewTicker(pingInterval * time.Second)
-		defer pingTicker.Stop()
+	pingTicker := time.NewTicker(time.Duration(pingInterval) * time.Second)
 
+	go func() {
+		defer pingTicker.Stop()
 		for {
 			select {
 			case <-pingTicker.C:
@@ -156,8 +178,8 @@ func placeSocketHandler(w http.ResponseWriter, r *http.Request) {
 			conn.Close()
 		}
 
-		x := binary.BigEndian.Uint32(message[0:4])
-		y := binary.BigEndian.Uint32(message[4:8])
+		x := int(binary.BigEndian.Uint32(message[0:4]))
+		y := int(binary.BigEndian.Uint32(message[4:8]))
 
 		if x >= width || y >= height {
 			conn.Close()
@@ -165,17 +187,14 @@ func placeSocketHandler(w http.ResponseWriter, r *http.Request) {
 		}
 
 		color := message[8:11]
-		r := uint8(color[0])
-		g := uint8(color[1])
-		b := uint8(color[2])
 
 		canvasMutex.Lock()
 
 		index := 4 * ((y * width) + x)
 
-		canvas[index] = r
-		canvas[index+1] = g
-		canvas[index+2] = b
+		for i := 0; i < 3; i++ {
+			canvas[index+1] = uint8(color[i])
+		}
 
 		canvasMutex.Unlock()
 
@@ -197,18 +216,16 @@ func main() {
 
 	go func() {
 		for {
-			time.Sleep(saveInterval * time.Second)
+			time.Sleep(time.Duration(saveInterval) * time.Second)
 			saveCanvas()
 		}
 	}()
 
-	http.HandleFunc("/place.png", placeHandler)
-	http.HandleFunc("/ws", placeSocketHandler)
+	http.HandleFunc("/place.png", placepng)
+	http.HandleFunc("/ws", wsHandler)
 
-	port := 80
-	fmt.Printf("Server is running on port %d\n", port)
-	err := http.ListenAndServe(fmt.Sprintf(":%d", port), nil)
-	if err != nil {
+	fmt.Printf("Server is running on port %s\n", address)
+	if err := http.ListenAndServe(address, nil); err != nil {
 		fmt.Println("Error starting server:", err)
 	}
 }
