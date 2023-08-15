@@ -187,6 +187,7 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 
 		if len(message) != 11 {
 			conn.Close()
+			return
 		}
 
 		x := int(binary.BigEndian.Uint32(message[0:4]))
