@@ -40,7 +40,8 @@ class Place {
           return null;
         }
 
-        let buf = await this.#downloadProgress(resp);
+        let buf = new Uint8Array(await resp.arrayBuffer());
+        // let buf = await this.#downloadProgress(resp);
         await this.#setImage(buf);
 
         this.#loaded = true;
@@ -93,7 +94,6 @@ class Place {
 
     const socketError = (event) => {
       console.error("Error making WebSocket connection.");
-      alert("Failed to connect.");
       this.#socket.close();
     };
 
