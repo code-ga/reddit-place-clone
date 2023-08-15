@@ -132,7 +132,6 @@ func placepng(w http.ResponseWriter, r *http.Request) {
 	copyCanvasToImage(img)
 
 	w.Header().Set("Content-Type", "image/png")
-	w.Header().Set("Cache-Control", "max-age=0")
 	png.Encode(w, img)
 }
 

@@ -17,7 +17,7 @@ server {
 
     location /place.png {
         proxy_pass          http://place;
-        proxy_set_header    Cache-Control no-cache;
+        add_header          Cache-Control no-cache;
     }
 
 }
