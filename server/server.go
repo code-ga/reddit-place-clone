@@ -35,6 +35,30 @@ var (
 	clients = make([]*websocket.Conn, *connections)
 )
 
+func placePixel(x, y int, r, g, b uint8) {
+	canvasMutex.Lock()
+	defer canvasMutex.Unlock()
+
+	index := 4 * ((y * *width) + x)
+	canvas[index] = r
+	canvas[index+1] = g
+	canvas[index+2] = b
+	canvas[index+3] = 255
+}
+
+func broadcast(message []byte) {
+	for _, client := range clients {
+		if client == nil {
+			continue
+		}
+
+		if err := client.WriteMessage(websocket.BinaryMessage, message); err != nil {
+			client.Close()
+			return
+		}
+	}
+}
+
 func initCanvas() {
 	if _, err := os.Stat(*canvasFile); err == nil {
 		file, err := os.Open(*canvasFile)
@@ -198,28 +222,13 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		color := message[8:11]
+		r := message[8]
+		g := message[9]
+		b := message[10]
 
-		canvasMutex.Lock()
+		placePixel(x, y, r, g, b)
 
-		index := 4 * ((y * *width) + x)
-
-		for i := 0; i < 3; i++ {
-			canvas[index+i] = uint8(color[i])
-		}
-
-		canvasMutex.Unlock()
-
-		for _, client := range clients {
-			if client == nil {
-				continue
-			}
-
-			if err := client.WriteMessage(websocket.BinaryMessage, message); err != nil {
-				client.Close()
-				return
-			}
-		}
+		broadcast(message)
 	}
 }
 
