@@ -70,6 +70,7 @@ const GUI = (cvs, glWindow, place) => {
       case 0:
         dragdown = true;
         lastMovePos = { x: ev.clientX, y: ev.clientY };
+        console.log(glWindow.click({ x: ev.clientX, y: ev.clientY }));
         break;
       case 1:
         pickColor({ x: ev.clientX, y: ev.clientY });
