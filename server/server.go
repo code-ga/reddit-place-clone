@@ -226,6 +226,12 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 		g := message[9]
 		b := message[10]
 
+		index := 4 * ((y * *width) + x)
+
+		if canvas[index] == r && canvas[index+1] == g && canvas[index+2] == b {
+			continue
+		}
+
 		placePixel(x, y, r, g, b)
 
 		broadcast(message)
