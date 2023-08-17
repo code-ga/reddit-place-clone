@@ -37,7 +37,6 @@ class Place {
       async (resp) => {
         if (!resp.ok) {
           console.error("Error downloading map.");
-          await this.initConnection();
           return null;
         }
 
