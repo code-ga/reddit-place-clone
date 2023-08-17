@@ -54,7 +54,7 @@ func broadcast(message []byte) {
 
 		if err := client.WriteMessage(websocket.BinaryMessage, message); err != nil {
 			client.Close()
-			return
+			continue
 		}
 	}
 }
