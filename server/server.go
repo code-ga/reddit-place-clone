@@ -72,19 +72,6 @@ func (canvas *Canvas) GetPixel(x, y int) (uint8, uint8, uint8) {
 	return canvas.Data[index], canvas.Data[index+1], canvas.Data[index+2]
 }
 
-func broadcast(message []byte) {
-	for _, client := range clients {
-		if client == nil {
-			continue
-		}
-
-		if err := client.WriteMessage(websocket.BinaryMessage, message); err != nil {
-			client.Close()
-			continue
-		}
-	}
-}
-
 func (canvas *Canvas) FromImage(img *image.Image) {
 	for y := 0; y < (*img).Bounds().Dy(); y++ {
 		for x := 0; x < (*img).Bounds().Dx(); x++ {
@@ -134,6 +121,19 @@ func (canvas *Canvas) ToFile(filename string) error {
 	}
 
 	return nil
+}
+
+func broadcast(message []byte) {
+	for _, client := range clients {
+		if client == nil {
+			continue
+		}
+
+		if err := client.WriteMessage(websocket.BinaryMessage, message); err != nil {
+			client.Close()
+			continue
+		}
+	}
 }
 
 func placepng(w http.ResponseWriter, r *http.Request) {
@@ -272,12 +272,17 @@ func main() {
 		return true // too lazy to implement proper origin checking
 	}
 
-	initCanvas()
+	if err := initCanvas(); err != nil {
+		fmt.Println("Error initializing canvas:", err)
+		return
+	}
 
 	go func() {
 		for {
 			time.Sleep(time.Duration(*saveInterval) * time.Second)
-			canvas.ToFile(*canvasFile)
+			if err := canvas.ToFile(*canvasFile); err != nil {
+				fmt.Println("Error saving canvas:", err)
+			}
 		}
 	}()
 
