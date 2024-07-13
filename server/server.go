@@ -33,7 +33,7 @@ type Canvas struct {
 }
 
 var (
-	canvas   = Canvas{Width: *width, Height: *height, Data: make([]byte, 3*(*width)*(*height))}
+	canvas   Canvas
 	upgrader = websocket.Upgrader{
 		ReadBufferSize:  1024,
 		WriteBufferSize: 1024,
@@ -84,8 +84,8 @@ func (canvas *Canvas) FromImage(img *image.Image) {
 }
 
 func (canvas *Canvas) ToImage(img *image.RGBA) {
-	for y := 0; y < *height; y++ {
-		for x := 0; x < *width; x++ {
+	for y := 0; y < canvas.Height; y++ {
+		for x := 0; x < canvas.Width; x++ {
 			r, g, b := canvas.GetPixel(x, y)
 			img.Set(x, y, color.RGBA{r, g, b, 255})
 		}
@@ -267,6 +267,8 @@ func initCanvas() error {
 
 func main() {
 	flag.Parse()
+
+	canvas = Canvas{Width: *width, Height: *height, Data: make([]byte, 3*(*width)*(*height))}
 
 	upgrader.CheckOrigin = func(r *http.Request) bool {
 		return true // too lazy to implement proper origin checking
