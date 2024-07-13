@@ -9,7 +9,6 @@ import (
 	"image/png"
 	"net/http"
 	"os"
-	"sync"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -17,33 +16,60 @@ import (
 
 var (
 	address      = flag.String("address", ":80", "Address to listen on")
-	width        = flag.Int("width", 1280, "Width of the canvas")
-	height       = flag.Int("height", 720, "Height of the canvas")
-	saveInterval = flag.Int("save-interval", 60, "Interval to save the canvas (in seconds)")
+	width        = flag.Int("width", 1000, "Width of the canvas")
+	height       = flag.Int("height", 1000, "Height of the canvas")
+	saveInterval = flag.Int("save-interval", 120, "Interval to save the canvas (in seconds)")
 	pingInterval = flag.Int("ping-interval", 30, "Interval to ping clients (in seconds)")
-	canvasFile   = flag.String("save", "place.png", "File to save the canvas to")
-	connections  = flag.Int("connections", 5000, "Maximum number of connections")
+	canvasFile   = flag.String("save-location", "place.png", "File to save the canvas to")
+	connections  = flag.Int("connections", 20000, "Maximum number of connections")
 )
 
+type Canvas struct {
+	Width  int
+	Height int
+	Data   []byte
+
+	// Mutex *sync.Mutex
+}
+
 var (
-	canvas      = make([]byte, 4*(*width)*(*height))
-	canvasMutex = &sync.Mutex{}
-	upgrader    = websocket.Upgrader{
+	canvas   = Canvas{Width: *width, Height: *height, Data: make([]byte, 3*(*width)*(*height))}
+	upgrader = websocket.Upgrader{
 		ReadBufferSize:  1024,
 		WriteBufferSize: 1024,
 	}
 	clients = make([]*websocket.Conn, *connections)
 )
 
-func placePixel(x, y int, r, g, b uint8) {
-	canvasMutex.Lock()
-	defer canvasMutex.Unlock()
+func (canvas *Canvas) Clear() {
+	// canvas.Mutex.Lock()
+	// defer canvas.Mutex.Unlock()
 
-	index := 4 * ((y * *width) + x)
-	canvas[index] = r
-	canvas[index+1] = g
-	canvas[index+2] = b
-	canvas[index+3] = 255
+	for i := 0; i < 3*canvas.Width*canvas.Height; i++ {
+		canvas.Data[i] = uint8(255)
+	}
+}
+
+func (canvas *Canvas) GetIndex(x, y int) int {
+	return 3 * ((y * canvas.Width) + x)
+}
+
+func (canvas *Canvas) PlacePixel(x, y int, r, g, b uint8) {
+	// canvas.Mutex.Lock()
+	// defer canvas.Mutex.Unlock()
+
+	index := canvas.GetIndex(x, y)
+	canvas.Data[index] = r
+	canvas.Data[index+1] = g
+	canvas.Data[index+2] = b
+}
+
+func (canvas *Canvas) GetPixel(x, y int) (uint8, uint8, uint8) {
+	// canvas.Mutex.Lock()
+	// defer canvas.Mutex.Unlock()
+
+	index := canvas.GetIndex(x, y)
+	return canvas.Data[index], canvas.Data[index+1], canvas.Data[index+2]
 }
 
 func broadcast(message []byte) {
@@ -59,101 +85,63 @@ func broadcast(message []byte) {
 	}
 }
 
-func initCanvas() {
-	if _, err := os.Stat(*canvasFile); err == nil {
-		file, err := os.Open(*canvasFile)
-		if err != nil {
-			fmt.Println("Error opening canvas file:", err)
-			return
+func (canvas *Canvas) FromImage(img *image.Image) {
+	for y := 0; y < (*img).Bounds().Dy(); y++ {
+		for x := 0; x < (*img).Bounds().Dx(); x++ {
+			r, g, b, _ := (*img).At(x, y).RGBA()
+
+			canvas.PlacePixel(x, y, uint8(r>>8), uint8(g>>8), uint8(b>>8))
 		}
-		defer file.Close()
-
-		img, _, err := image.Decode(file)
-		if err != nil {
-			fmt.Println("Error decoding image:", err)
-			return
-		}
-
-		canvasMutex.Lock()
-		defer canvasMutex.Unlock()
-
-		for y := 0; y < img.Bounds().Dy(); y++ {
-			for x := 0; x < img.Bounds().Dx(); x++ {
-				r, g, b, _ := img.At(x, y).RGBA()
-				index := 4 * ((y * *width) + x)
-				canvas[index] = uint8(r >> 8)
-				canvas[index+1] = uint8(g >> 8)
-				canvas[index+2] = uint8(b >> 8)
-				canvas[index+3] = uint8(255)
-			}
-		}
-	} else {
-		fmt.Println("Making new canvas...")
-
-		canvasMutex.Lock()
-
-		for y := 0; y < *height; y++ {
-			for x := 0; x < *width; x++ {
-				index := 4 * ((y * *width) + x)
-				canvas[index] = uint8(255)
-				canvas[index+1] = uint8(255)
-				canvas[index+2] = uint8(255)
-				canvas[index+3] = uint8(255)
-			}
-		}
-
-		canvasMutex.Unlock()
-
-		saveCanvas()
 	}
+
 }
 
-func copyCanvasToImage(img *image.RGBA) {
+func (canvas *Canvas) ToImage(img *image.RGBA) {
 	for y := 0; y < *height; y++ {
 		for x := 0; x < *width; x++ {
-			index := 4 * ((y * *width) + x)
-			r := uint8(canvas[index])
-			g := uint8(canvas[index+1])
-			b := uint8(canvas[index+2])
+			r, g, b := canvas.GetPixel(x, y)
 			img.Set(x, y, color.RGBA{r, g, b, 255})
 		}
 	}
 }
 
-func saveCanvas() {
-	canvasMutex.Lock()
-	defer canvasMutex.Unlock()
+func (canvas *Canvas) ToFile(filename string) error {
+	// canvas.Mutex.Lock()
+	// defer canvas.Mutex.Unlock()
 
-	if _, err := os.Stat(*canvasFile); err != nil {
-		file, err := os.Create(*canvasFile)
+	var file *os.File
+	defer file.Close()
+
+	if _, err := os.Stat(filename); err != nil {
+		file, err = os.Create(filename)
 		if err != nil {
-			fmt.Println("Error creating canvas file:", err)
-			return
+			return fmt.Errorf("error creating canvas file: %v", err)
 		}
 		defer file.Close()
 	}
 
-	file, err := os.OpenFile(*canvasFile, os.O_WRONLY, 0600)
+	file, err := os.OpenFile(filename, os.O_WRONLY, 0600)
 	if err != nil {
-		fmt.Println("Error opening canvas file:", err)
-		return
+		return fmt.Errorf("error opening canvas file: %v", err)
 	}
 	defer file.Close()
 
 	img := image.NewRGBA(image.Rect(0, 0, *width, *height))
-	copyCanvasToImage(img)
+	canvas.ToImage(img)
 
 	if err = png.Encode(file, img); err != nil {
-		fmt.Println("Error encoding canvas to PNG:", err)
+		return fmt.Errorf("error encoding canvas to PNG: %v", err)
 	}
+
+	return nil
 }
 
 func placepng(w http.ResponseWriter, r *http.Request) {
-	canvasMutex.Lock()
-	defer canvasMutex.Unlock()
+	// canvas.Mutex.Lock()
+	// defer canvas.Mutex.Unlock()
 
 	img := image.NewRGBA(image.Rect(0, 0, *width, *height))
-	copyCanvasToImage(img)
+	canvas.ToImage(img)
 
 	w.Header().Set("Content-Type", "image/png")
 	png.Encode(w, img)
@@ -226,31 +214,70 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 		g := message[9]
 		b := message[10]
 
-		index := 4 * ((y * *width) + x)
-
-		if canvas[index] == r && canvas[index+1] == g && canvas[index+2] == b {
+		cr, cg, cb := canvas.GetPixel(x, y)
+		if cr == r && cg == g && cb == b {
 			continue
 		}
 
-		placePixel(x, y, r, g, b)
+		canvas.PlacePixel(x, y, r, g, b)
 
 		broadcast(message)
 	}
 }
 
-func main() {
+func initCanvas() error {
+	if _, err := os.Stat(*canvasFile); err != nil {
+		fmt.Println("Making new canvas...")
 
+		// canvas.Mutex.Lock()
+
+		canvas.Clear()
+
+		// canvas.Mutex.Unlock()
+
+		if err := canvas.ToFile(*canvasFile); err != nil {
+			return fmt.Errorf("error saving canvas: %v", err)
+		}
+
+		return nil
+	}
+
+	file, err := os.Open(*canvasFile)
+	if err != nil {
+		return fmt.Errorf("error opening canvas file: %v", err)
+	}
+	defer file.Close()
+
+	img, _, err := image.Decode(file)
+	if err != nil {
+		return fmt.Errorf("error decoding image: %v", err)
+	}
+
+	// canvas.Mutex.Lock()
+
+	canvas.FromImage(&img)
+
+	// defer canvas.Mutex.Unlock()
+
+	fmt.Println("Loaded canvas from file.")
+
+	return nil
+
+}
+
+func main() {
 	flag.Parse()
 
 	upgrader.CheckOrigin = func(r *http.Request) bool {
 		return true // too lazy to implement proper origin checking
 	}
+
 	initCanvas()
 
 	go func() {
 		for {
 			time.Sleep(time.Duration(*saveInterval) * time.Second)
-			saveCanvas()
+			canvas.ToFile(*canvasFile)
 		}
 	}()
 
