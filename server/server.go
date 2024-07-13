@@ -144,6 +144,10 @@ func placepng(w http.ResponseWriter, r *http.Request) {
 	canvas.ToImage(img)
 
 	w.Header().Set("Content-Type", "image/png")
+	w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
+	w.Header().Set("Pragma", "no-cache")
+	w.Header().Set("Expires", "0")
+
 	png.Encode(w, img)
 }
 
