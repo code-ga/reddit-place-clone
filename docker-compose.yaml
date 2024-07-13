@@ -14,4 +14,4 @@ services:
       context: ./nginx/
       dockerfile: Dockerfile
     ports:
-      - "80:80"
+      - "${PORT}:80"
