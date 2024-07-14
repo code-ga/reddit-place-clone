@@ -301,8 +301,13 @@ func initCanvas() error {
 
 func StatsHandle(w http.ResponseWriter, r *http.Request) {
 	// response number of connections
-
-	w.Write([]byte(strconv.Itoa(len(clients))))
+	num := 0
+	for _, client := range clients {
+		if client != nil {
+			num++
+		}
+	}
+	w.Write([]byte(strconv.Itoa(num)))
 }
 
 func main() {
