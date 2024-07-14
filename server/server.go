@@ -174,6 +174,10 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 	conn.SetCloseHandler(
 		func(code int, text string) error {
 			for index, c := range clients {
+				if c == nil {
+					continue
+				}
+
 				if c.Conn == conn {
 					clients[index] = nil
 					break
