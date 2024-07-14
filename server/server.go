@@ -41,7 +41,8 @@ var (
 		ReadBufferSize:  1024,
 		WriteBufferSize: 1024,
 	}
-	clients = make([]*websocket.Conn, *connections)
+	clients      = make([]*websocket.Conn, *connections)
+	clientsMutex sync.Mutex
 )
 
 func (canvas *Canvas) Clear() {
@@ -130,7 +131,9 @@ var writeMutex = &sync.Mutex{}
 
 func broadcast(message []byte) {
 	writeMutex.Lock()
+	clientsMutex.Lock()
 	defer writeMutex.Unlock()
+	defer clientsMutex.Unlock()
 
 	for _, client := range clients {
 		if client == nil {
@@ -146,7 +149,9 @@ func broadcast(message []byte) {
 
 func pingAll() {
 	writeMutex.Lock()
+	clientsMutex.Lock()
 	defer writeMutex.Unlock()
+	defer clientsMutex.Unlock()
 
 	for _, client := range clients {
 		if client == nil {
@@ -184,6 +189,7 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	amIDying := true
+	clientsMutex.Lock()
 	for index, client := range clients {
 		if client == nil {
 			clients[index] = conn
@@ -191,6 +197,7 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 			break
 		}
 	}
+	clientsMutex.Unlock()
 
 	if amIDying {
 		conn.Close() // bye bye
@@ -199,12 +206,14 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 
 	conn.SetCloseHandler(
 		func(code int, text string) error {
+			clientsMutex.Lock()
 			for index, c := range clients {
 				if c == conn {
 					clients[index] = nil
 					break
 				}
 			}
+			clientsMutex.Unlock()
 			return nil
 		},
 	)
@@ -264,6 +273,23 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 
 		broadcast(message)
 	}
+}
+
+func compactClientList() {
+	clientsMutex.Lock()
+	defer clientsMutex.Unlock()
+
+	newClients := make([]*websocket.Conn, *connections)
+
+	i := 0
+	for _, client := range clients {
+		if client != nil {
+			newClients[i] = client
+			i++
+		}
+	}
+
+	clients = newClients
 }
 
 func initCanvas() error {
@@ -346,6 +372,7 @@ func main() {
 		for {
 			time.Sleep(time.Duration(*pingInterval) * time.Second)
 			pingAll()
+			compactClientList()
 		}
 	}()
 
