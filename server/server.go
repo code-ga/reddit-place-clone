@@ -9,6 +9,7 @@ import (
 	"image/png"
 	"net/http"
 	"os"
+	"os/exec"
 	"strconv"
 	"sync"
 	"time"
@@ -296,9 +297,8 @@ func main() {
 			if err := canvas.ToFile(*canvasFile); err != nil {
 				fmt.Println("Error saving canvas:", err)
 			}
-			if err := canvas.ToFile(fmt.Sprintf("%s-%s", *canvasFile, strconv.FormatInt(time.Now().Unix(), 10))); err != nil {
-				fmt.Println("Error saving canvas:", err)
-			}
+
+			exec.Command("cp", *canvasFile, fmt.Sprintf("%s-%s", *canvasFile, strconv.FormatInt(time.Now().Unix(), 10))).Start()
 		}
 	}()
 
