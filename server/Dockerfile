@@ -15,4 +15,4 @@ COPY --from=build /build/place .
 
 EXPOSE 80
 
-CMD [ "/app/place", "--width", "1280", "--height", "720", "--connections", "50000", "--save-location", "/place/place.png" ]
+CMD [ "/app/place", "--width", "1280", "--height", "720","--ping-interval", "9999", "--connections", "50000", "--save-location", "/place/place.png" ]
