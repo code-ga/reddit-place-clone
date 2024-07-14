@@ -187,8 +187,7 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 		func(code int, text string) error {
 			for index, c := range clients {
 				if c == conn {
-					// clients[index] = nil
-					clients = append(clients[:index], clients[index+1:]...)
+					clients[index] = nil
 					break
 				}
 			}
