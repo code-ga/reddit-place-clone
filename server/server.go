@@ -24,7 +24,7 @@ var (
 	saveInterval = flag.Int("save-interval", 120, "Interval to save the canvas (in seconds)")
 	pingInterval = flag.Int("ping-interval", 30, "Interval to ping clients (in seconds)")
 	canvasFile   = flag.String("save-location", "place.png", "File to save the canvas to")
-	connections  = flag.Int("connections", 20000, "Maximum number of connections")
+	connections  = flag.Int("connections", 500000, "Maximum number of connections")
 )
 
 type Canvas struct {
