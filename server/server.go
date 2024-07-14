@@ -76,8 +76,8 @@ func (canvas *Canvas) GetPixel(x, y int) (uint8, uint8, uint8) {
 }
 
 func (canvas *Canvas) FromImage(img *image.Image) {
-	for y := 0; y < (*img).Bounds().Dy(); y++ {
-		for x := 0; x < (*img).Bounds().Dx(); x++ {
+	for y := 0; y < canvas.Height; y++ {
+		for x := 0; x < canvas.Width; x++ {
 			r, g, b, _ := (*img).At(x, y).RGBA()
 
 			canvas.PlacePixel(x, y, uint8(r>>8), uint8(g>>8), uint8(b>>8))
