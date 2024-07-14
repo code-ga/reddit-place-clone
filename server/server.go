@@ -183,6 +183,20 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	amIDying := true
+	for index, client := range clients {
+		if client == nil {
+			clients[index] = conn
+			amIDying = false // nah, I'd win
+			break
+		}
+	}
+
+	if amIDying {
+		conn.Close() // bye bye
+		return
+	}
+
 	conn.SetCloseHandler(
 		func(code int, text string) error {
 			for index, c := range clients {
@@ -194,13 +208,6 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 			return nil
 		},
 	)
-
-	for index, client := range clients {
-		if client == nil {
-			clients[index] = conn
-			break
-		}
-	}
 
 	// pingTicker := time.NewTicker(time.Duration(*pingInterval) * time.Second)
 
