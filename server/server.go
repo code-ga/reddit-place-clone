@@ -144,6 +144,23 @@ func broadcast(message []byte) {
 	}
 }
 
+func pingAll() {
+	writeMutex.Lock()
+	defer writeMutex.Unlock()
+
+	for _, client := range clients {
+		if client == nil {
+			continue
+		}
+
+		if err := client.WriteMessage(websocket.PingMessage, []byte{}); err != nil {
+			client.Close()
+			continue
+		}
+	}
+
+}
+
 func placepng(w http.ResponseWriter, r *http.Request) {
 	// canvas.Mutex.Lock()
 	// defer canvas.Mutex.Unlock()
@@ -180,22 +197,22 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 
 	clients = append(clients, conn)
 
-	pingTicker := time.NewTicker(time.Duration(*pingInterval) * time.Second)
+	// pingTicker := time.NewTicker(time.Duration(*pingInterval) * time.Second)
 
-	go func() {
-		defer pingTicker.Stop()
-		for {
-			select {
-			case <-pingTicker.C:
-				err := conn.WriteMessage(websocket.PingMessage, []byte{})
-				if err != nil {
-					fmt.Println("Error sending ping:", err)
-					conn.Close()
-					return
-				}
-			}
-		}
-	}()
+	// go func() {
+	// 	defer pingTicker.Stop()
+	// 	for {
+	// 		select {
+	// 		case <-pingTicker.C:
+	// 			err := conn.WriteMessage(websocket.PingMessage, []byte{})
+	// 			if err != nil {
+	// 				fmt.Println("Error sending ping:", err)
+	// 				conn.Close()
+	// 				return
+	// 			}
+	// 		}
+	// 	}
+	// }()
 
 	for {
 		_, message, err := conn.ReadMessage()
@@ -299,6 +316,13 @@ func main() {
 			}
 
 			exec.Command("cp", *canvasFile, fmt.Sprintf("%s-%s", *canvasFile, strconv.FormatInt(time.Now().Unix(), 10))).Start()
+		}
+	}()
+
+	go func() {
+		for {
+			time.Sleep(time.Duration(*pingInterval) * time.Second)
+			pingAll()
 		}
 	}()
 
