@@ -262,7 +262,7 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 
 		canvas.PlacePixel(x, y, r, g, b)
 
-		broadcast(message)
+		go broadcast(message) // h ms bt cái http handler blocking
 	}
 }
 
