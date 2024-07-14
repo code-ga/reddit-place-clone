@@ -250,7 +250,7 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 
 		canvas.PlacePixel(x, y, r, g, b)
 
-		broadcast(message)
+		go broadcast(message)
 	}
 }
 
@@ -294,6 +294,12 @@ func initCanvas() error {
 
 }
 
+func StatsHandle(w http.ResponseWriter, r *http.Request) {
+	// response number of connections
+
+	w.Write([]byte(strconv.Itoa(len(clients))))
+}
+
 func main() {
 	flag.Parse()
 
@@ -328,6 +334,7 @@ func main() {
 
 	http.HandleFunc("/place.png", placepng)
 	http.HandleFunc("/ws", wsHandler)
+	http.HandleFunc("/stats",StatsHandle)
 
 	fmt.Printf("Server is running on %s\n", *address)
 	if err := http.ListenAndServe(*address, nil); err != nil {
