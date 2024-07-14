@@ -33,13 +33,19 @@ type Canvas struct {
 	// Mutex *sync.Mutex
 }
 
+type Client struct {
+	Conn *websocket.Conn
+
+	WriteMutex *sync.Mutex
+}
+
 var (
 	canvas   Canvas
 	upgrader = websocket.Upgrader{
 		ReadBufferSize:  1024,
 		WriteBufferSize: 1024,
 	}
-	clients = make([]*websocket.Conn, *connections)
+	clients = make([]*Client, *connections)
 )
 
 func (canvas *Canvas) Clear() {
@@ -124,19 +130,20 @@ func (canvas *Canvas) ToFile(filename string) error {
 	return nil
 }
 
-var writeMutex = &sync.Mutex{}
-
 func broadcast(message []byte) {
-	writeMutex.Lock()
-	defer writeMutex.Unlock()
-
 	for _, client := range clients {
 		if client == nil {
 			continue
 		}
+		if client.Conn == nil {
+			continue
+		}
 
-		if err := client.WriteMessage(websocket.BinaryMessage, message); err != nil {
-			client.Close()
+		client.WriteMutex.Lock()
+		defer client.WriteMutex.Unlock()
+
+		if err := client.Conn.WriteMessage(websocket.BinaryMessage, message); err != nil {
+			client.Conn.Close()
 			continue
 		}
 	}
@@ -167,7 +174,7 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 	conn.SetCloseHandler(
 		func(code int, text string) error {
 			for index, c := range clients {
-				if c == conn {
+				if c.Conn == conn {
 					clients[index] = nil
 					break
 				}
@@ -176,7 +183,8 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 		},
 	)
 
-	clients = append(clients, conn)
+	client := &Client{Conn: conn, WriteMutex: &sync.Mutex{}}
+	clients = append(clients, client)
 
 	pingTicker := time.NewTicker(time.Duration(*pingInterval) * time.Second)
 
@@ -185,6 +193,9 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 		for {
 			select {
 			case <-pingTicker.C:
+				client.WriteMutex.Lock()
+				defer client.WriteMutex.Unlock()
+
 				err := conn.WriteMessage(websocket.PingMessage, []byte{})
 				if err != nil {
 					fmt.Println("Error sending ping:", err)
