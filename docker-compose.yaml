@@ -13,4 +13,6 @@ services:
     build:
       context: ./nginx/
       dockerfile: Dockerfile
+    ports:
+      - "${PORT}:80"
     restart: unless-stopped
