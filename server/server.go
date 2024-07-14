@@ -9,6 +9,7 @@ import (
 	"image/png"
 	"net/http"
 	"os"
+	"sync"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -123,7 +124,12 @@ func (canvas *Canvas) ToFile(filename string) error {
 	return nil
 }
 
+var writeMutex = &sync.Mutex{}
+
 func broadcast(message []byte) {
+	writeMutex.Lock()
+	defer writeMutex.Unlock()
+
 	for _, client := range clients {
 		if client == nil {
 			continue
