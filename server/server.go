@@ -195,7 +195,12 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 		},
 	)
 
-	clients = append(clients, conn)
+	for index, client := range clients {
+		if client == nil {
+			clients[index] = conn
+			break
+		}
+	}
 
 	// pingTicker := time.NewTicker(time.Duration(*pingInterval) * time.Second)
 
@@ -250,7 +255,7 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 
 		canvas.PlacePixel(x, y, r, g, b)
 
-		go broadcast(message)
+		broadcast(message)
 	}
 }
 
@@ -334,7 +339,7 @@ func main() {
 
 	http.HandleFunc("/place.png", placepng)
 	http.HandleFunc("/ws", wsHandler)
-	http.HandleFunc("/stats",StatsHandle)
+	http.HandleFunc("/stats", StatsHandle)
 
 	fmt.Printf("Server is running on %s\n", *address)
 	if err := http.ListenAndServe(*address, nil); err != nil {
