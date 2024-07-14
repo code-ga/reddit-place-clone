@@ -33,22 +33,20 @@ class Place {
     await this.#connect(wsProt + "//" + host + "/ws");
     this.#loadingp.innerHTML = "downloading map";
 
-    fetch(window.location.protocol + "//" + host + "/place.png").then(
-      async (resp) => {
-        if (!resp.ok) {
-          console.error("Error downloading map.");
-          return null;
-        }
-
-        let buf = new Uint8Array(await resp.arrayBuffer());
-        // let buf = await this.#downloadProgress(resp);
-        await this.#setImage(buf);
-
-        this.#loaded = true;
-        this.#loadingp.innerHTML = "";
-        this.#uiwrapper.setAttribute("hide", true);
+    fetch(window.location.protocol + "//" + host + "/place.png").then(async (resp) => {
+      if (!resp.ok) {
+        console.error("Error downloading map.");
+        return null;
       }
-    );
+
+      let buf = new Uint8Array(await resp.arrayBuffer());
+      // let buf = await this.#downloadProgress(resp);
+      await this.#setImage(buf);
+
+      this.#loaded = true;
+      this.#loadingp.innerHTML = "";
+      this.#uiwrapper.setAttribute("hide", true);
+    });
   }
 
   async #downloadProgress(resp) {
@@ -61,8 +59,7 @@ class Place {
       if (value) {
         a.set(value, pos);
         pos += value.length;
-        this.#loadingp.innerHTML =
-          "downloading map " + Math.round((pos / len) * 100) + "%";
+        this.#loadingp.innerHTML = "downloading map " + Math.round((pos / len) * 100) + "%";
       }
       if (done) break;
     }
@@ -119,14 +116,27 @@ class Place {
     }
   }
 
+  /**
+   *
+   * @param {ArrayBuffer} b
+   */
   #handleSocketSetPixel(b) {
-    if (this.#loaded) {
-      let x = this.#getUint32(b, 0);
-      let y = this.#getUint32(b, 4);
-      let color = new Uint8Array(b.slice(8));
+    let bytes = b;
+    let view = new DataView(b);
+
+    let offset = 0;
+
+    if (!this.#loaded) return;
+
+    while (offset < bytes.byteLength) {
+      const x = view.getUint32(offset, false);
+      const y = view.getUint32(offset + 4, false);
+      const color = new Uint8Array(bytes.slice(offset + 8, offset + 11));
       this.#glWindow.setPixelColor(x, y, color);
-      this.#glWindow.draw();
+      offset += 11;
     }
+
+    this.#glWindow.draw();
   }
 
   async #setImage(data) {

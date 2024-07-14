@@ -129,7 +129,32 @@ func (canvas *Canvas) ToFile(filename string) error {
 
 var writeMutex = &sync.Mutex{}
 
-func broadcast(message []byte) {
+func broadcast() {
+	bigMessage := make([]byte, 0)
+	done := false
+
+	changesMutex.Lock()
+
+	for !done {
+		select {
+		case message, ok := <-changes:
+			if !ok {
+				done = true
+				break
+			}
+			bigMessage = append(bigMessage, message...)
+
+		default:
+			done = true
+		}
+	}
+
+	changesMutex.Unlock()
+
+	if len(bigMessage) == 0 {
+		return
+	}
+
 	writeMutex.Lock()
 	clientsMutex.Lock()
 	defer writeMutex.Unlock()
@@ -140,7 +165,7 @@ func broadcast(message []byte) {
 			continue
 		}
 
-		if err := client.WriteMessage(websocket.BinaryMessage, message); err != nil {
+		if err := client.WriteMessage(websocket.BinaryMessage, bigMessage); err != nil {
 			client.Close()
 			continue
 		}
@@ -180,6 +205,9 @@ func placepng(w http.ResponseWriter, r *http.Request) {
 
 	png.Encode(w, img)
 }
+
+var changes = make(chan []byte, 60000) // 11 bytes per message, 60000 messages = 660KB
+var changesMutex = &sync.Mutex{}
 
 func wsHandler(w http.ResponseWriter, r *http.Request) {
 	conn, err := upgrader.Upgrade(w, r, nil)
@@ -239,7 +267,7 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 		_, message, err := conn.ReadMessage()
 		if err != nil {
 			if websocket.IsCloseError(err, websocket.CloseNormalClosure) || websocket.IsCloseError(err, websocket.CloseGoingAway) {
-				fmt.Println("WebSocket connection closed:", err)
+				// fmt.Println("WebSocket connection closed:", err)
 			} else {
 				fmt.Println("Error reading message:", err)
 			}
@@ -271,7 +299,9 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 
 		canvas.PlacePixel(x, y, r, g, b)
 
-		broadcast(message)
+		changesMutex.Lock()
+		changes <- message
+		changesMutex.Unlock()
 	}
 }
 
@@ -356,6 +386,13 @@ func main() {
 		fmt.Println("Error initializing canvas:", err)
 		return
 	}
+
+	go func() {
+		for {
+			broadcast()
+			time.Sleep(100 * time.Millisecond)
+		}
+	}()
 
 	go func() {
 		for {
