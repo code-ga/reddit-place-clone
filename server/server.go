@@ -18,7 +18,7 @@ import (
 )
 
 var (
-	address      = flag.String("address", ":80", "Address to listen on")
+	address      = flag.String("address", ":4000", "Address to listen on")
 	width        = flag.Int("width", 1000, "Width of the canvas")
 	height       = flag.Int("height", 1000, "Height of the canvas")
 	saveInterval = flag.Int("save-interval", 120, "Interval to save the canvas (in seconds)")

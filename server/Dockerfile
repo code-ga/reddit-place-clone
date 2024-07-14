@@ -13,6 +13,6 @@ WORKDIR /app
 
 COPY --from=build /build/place .
 
-EXPOSE 80
+EXPOSE 4000
 
 CMD [ "/app/place", "--width", "1280", "--height", "720", "--save-location", "/place/place.png" ]
