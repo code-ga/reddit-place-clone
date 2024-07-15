@@ -429,6 +429,17 @@ func main() {
 
 	})
 
+	http.HandleFunc("/safe-restart", func(w http.ResponseWriter, r *http.Request) {
+		if err := canvas.ToFile(*canvasFile); err != nil {
+			fmt.Println("Error saving canvas:", err)
+			return
+		}
+
+		exec.Command("cp", *canvasFile, fmt.Sprintf("%s-%s", *canvasFile, strconv.FormatInt(time.Now().Unix(), 10))).Start()
+
+		panic("safe restart")
+	})
+
 	fmt.Printf("Server is running on %s\n", *address)
 	if err := http.ListenAndServe(*address, nil); err != nil {
 		fmt.Println("Error starting server:", err)
