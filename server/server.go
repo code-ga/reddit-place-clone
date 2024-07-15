@@ -12,6 +12,7 @@ import (
 	"os/exec"
 	"strconv"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -357,13 +358,9 @@ func initCanvas() error {
 
 func StatsHandle(w http.ResponseWriter, r *http.Request) {
 	// response number of connections
-	num := 0
-	for _, client := range clients {
-		if client != nil {
-			num++
-		}
-	}
-	w.Write([]byte(strconv.Itoa(num)))
+	// chỗ này nó sẽ tính lun cả những client mà nó nil lun D
+	// ko có nil
+	w.Write([]byte(strconv.Itoa(len(clients))))
 }
 
 func main() {
@@ -385,6 +382,17 @@ func main() {
 			fmt.Println("Number of connections: ", len(clients))
 			fmt.Println("Number of changes: ", len(changes))
 			time.Sleep(1 * time.Second)
+
+			if len(clients) > *connections-50 {
+				// kms
+				fmt.Println("Too many connections, shutting down...")
+				fmt.Println("Save first tho...")
+				if err := canvas.ToFile(*canvasFile); err != nil {
+					fmt.Println("Error saving canvas:", err)
+				}
+
+				os.Exit(0)
+			}
 		}
 	}()
 
@@ -437,8 +445,26 @@ func main() {
 
 		exec.Command("cp", *canvasFile, fmt.Sprintf("%s-%s", *canvasFile, strconv.FormatInt(time.Now().Unix(), 10))).Start()
 
-		panic("safe restart")
+		fmt.Println("Restarting server...")
+		os.Exit(0)
 	})
+
+	signals := make(chan os.Signal, 1)
+	go func() {
+		// handle os signals
+
+		sig := <-signals
+
+		if sig == syscall.SIGTERM || sig == syscall.SIGINT {
+			fmt.Println("Saving canvas...")
+			if err := canvas.ToFile(*canvasFile); err != nil {
+				fmt.Println("Error saving canvas:", err)
+			}
+
+			os.Exit(0)
+		}
+
+	}()
 
 	fmt.Printf("Server is running on %s\n", *address)
 	if err := http.ListenAndServe(*address, nil); err != nil {
