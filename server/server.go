@@ -27,6 +27,22 @@ var (
 	connections  = flag.Int("connections", 500000, "Maximum number of connections")
 )
 
+var (
+	canvas   Canvas
+	upgrader = websocket.Upgrader{
+		ReadBufferSize:  1024,
+		WriteBufferSize: 8192,
+	}
+	clients      = make([]*Client, 0)
+	clientsMutex = &sync.Mutex{}
+)
+
+type Client struct {
+	Conn *websocket.Conn
+
+	Mutex *sync.Mutex
+}
+
 type Canvas struct {
 	Width  int
 	Height int
@@ -34,16 +50,6 @@ type Canvas struct {
 
 	// Mutex *sync.Mutex
 }
-
-var (
-	canvas   Canvas
-	upgrader = websocket.Upgrader{
-		ReadBufferSize:  1024,
-		WriteBufferSize: 1024,
-	}
-	clients      = make([]*websocket.Conn, *connections)
-	clientsMutex sync.Mutex
-)
 
 func (canvas *Canvas) Clear() {
 	// canvas.Mutex.Lock()
@@ -127,55 +133,38 @@ func (canvas *Canvas) ToFile(filename string) error {
 	return nil
 }
 
-var writeMutex = &sync.Mutex{}
-
 func broadcast() {
-	bigMessage := make([]byte, 0)
-	done := false
-
 	changesMutex.Lock()
 
-	for !done {
-		select {
-		case message, ok := <-changes:
-			if !ok {
-				done = true
-				break
-			}
-			bigMessage = append(bigMessage, message...)
-
-		default:
-			done = true
-		}
-	}
-
-	changesMutex.Unlock()
-
-	if len(bigMessage) == 0 {
+	if len(changes) == 0 {
+		changesMutex.Unlock()
 		return
 	}
 
-	writeMutex.Lock()
 	clientsMutex.Lock()
-	defer writeMutex.Unlock()
-	defer clientsMutex.Unlock()
-
 	for _, client := range clients {
 		if client == nil {
 			continue
 		}
 
-		if err := client.WriteMessage(websocket.BinaryMessage, bigMessage); err != nil {
-			client.Close()
-			continue
-		}
+		go func(client *Client) {
+			client.Mutex.Lock()
+			defer client.Mutex.Unlock()
+			if err := client.Conn.WriteMessage(websocket.BinaryMessage, changes); err != nil {
+				client.Conn.Close()
+			}
+		}(client)
 	}
+	clientsMutex.Unlock()
+
+	changes = make([]byte, 0)
+
+	changesMutex.Unlock()
+
 }
 
 func pingAll() {
-	writeMutex.Lock()
 	clientsMutex.Lock()
-	defer writeMutex.Unlock()
 	defer clientsMutex.Unlock()
 
 	for _, client := range clients {
@@ -183,10 +172,13 @@ func pingAll() {
 			continue
 		}
 
-		if err := client.WriteMessage(websocket.PingMessage, []byte{}); err != nil {
-			client.Close()
-			continue
-		}
+		go func(client *Client) {
+			client.Mutex.Lock()
+			defer client.Mutex.Unlock()
+			if err := client.Conn.WriteMessage(websocket.PingMessage, []byte{}); err != nil {
+				client.Conn.Close()
+			}
+		}(client)
 	}
 
 }
@@ -206,7 +198,10 @@ func placepng(w http.ResponseWriter, r *http.Request) {
 	png.Encode(w, img)
 }
 
-var changes = make(chan []byte, 60000) // 11 bytes per message, 60000 messages = 660KB
+// var changes = make(chan []byte, 10000000) // 11 bytes per message, 1000000 messages ~ 11MB
+// big mistakes were made
+
+var changes = make([]byte, 0)
 var changesMutex = &sync.Mutex{}
 
 func wsHandler(w http.ResponseWriter, r *http.Request) {
@@ -216,28 +211,26 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	amIDying := true
-	clientsMutex.Lock()
-	for index, client := range clients {
-		if client == nil {
-			clients[index] = conn
-			amIDying = false // nah, I'd win
-			break
-		}
-	}
-	clientsMutex.Unlock()
-
-	if amIDying {
-		conn.Close() // bye bye
+	if len(clients) >= *connections {
+		conn.Close()
 		return
 	}
+
+	client := &Client{
+		Conn:  conn,
+		Mutex: &sync.Mutex{},
+	}
+
+	clientsMutex.Lock()
+	clients = append(clients, client)
+	clientsMutex.Unlock()
 
 	conn.SetCloseHandler(
 		func(code int, text string) error {
 			clientsMutex.Lock()
 			for index, c := range clients {
-				if c == conn {
-					clients[index] = nil
+				if c == client {
+					clients = append(clients[:index], clients[index+1:]...)
 					break
 				}
 			}
@@ -266,11 +259,11 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 	for {
 		_, message, err := conn.ReadMessage()
 		if err != nil {
-			if websocket.IsCloseError(err, websocket.CloseNormalClosure) || websocket.IsCloseError(err, websocket.CloseGoingAway) {
-				// fmt.Println("WebSocket connection closed:", err)
-			} else {
-				fmt.Println("Error reading message:", err)
-			}
+			// if websocket.IsCloseError(err, websocket.CloseNormalClosure) || websocket.IsCloseError(err, websocket.CloseGoingAway) {
+			// 	fmt.Println("WebSocket connection closed:", err)
+			// } else {
+			// 	fmt.Println("Error reading message:", err)
+			// }
 			conn.Close()
 			return
 		}
@@ -300,27 +293,27 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 		canvas.PlacePixel(x, y, r, g, b)
 
 		changesMutex.Lock()
-		changes <- message
+		changes = append(changes, message...)
 		changesMutex.Unlock()
 	}
 }
 
-func compactClientList() {
-	clientsMutex.Lock()
-	defer clientsMutex.Unlock()
+// func compactClientList() {
+// 	clientsMutex.Lock()
+// 	defer clientsMutex.Unlock()
 
-	newClients := make([]*websocket.Conn, *connections)
+// 	newClients := make([]*websocket.Conn, *connections)
 
-	i := 0
-	for _, client := range clients {
-		if client != nil {
-			newClients[i] = client
-			i++
-		}
-	}
+// 	i := 0
+// 	for _, client := range clients {
+// 		if client != nil {
+// 			newClients[i] = client
+// 			i++
+// 		}
+// 	}
 
-	clients = newClients
-}
+// 	clients = newClients
+// }
 
 func initCanvas() error {
 	if _, err := os.Stat(*canvasFile); err != nil {
@@ -389,8 +382,16 @@ func main() {
 
 	go func() {
 		for {
+			fmt.Println("Number of connections: ", len(clients))
+			fmt.Println("Number of changes: ", len(changes))
+			time.Sleep(1 * time.Second)
+		}
+	}()
+
+	go func() {
+		for {
 			broadcast()
-			time.Sleep(100 * time.Millisecond)
+			time.Sleep(25 * time.Millisecond)
 		}
 	}()
 
@@ -399,6 +400,7 @@ func main() {
 			time.Sleep(time.Duration(*saveInterval) * time.Second)
 			if err := canvas.ToFile(*canvasFile); err != nil {
 				fmt.Println("Error saving canvas:", err)
+				continue
 			}
 
 			exec.Command("cp", *canvasFile, fmt.Sprintf("%s-%s", *canvasFile, strconv.FormatInt(time.Now().Unix(), 10))).Start()
@@ -409,13 +411,23 @@ func main() {
 		for {
 			time.Sleep(time.Duration(*pingInterval) * time.Second)
 			pingAll()
-			compactClientList()
+			// compactClientList()
 		}
 	}()
 
 	http.HandleFunc("/place.png", placepng)
 	http.HandleFunc("/ws", wsHandler)
 	http.HandleFunc("/stats", StatsHandle)
+
+	http.HandleFunc("/save", func(w http.ResponseWriter, r *http.Request) {
+		if err := canvas.ToFile(*canvasFile); err != nil {
+			fmt.Println("Error saving canvas:", err)
+			return
+		}
+
+		exec.Command("cp", *canvasFile, fmt.Sprintf("%s-%s", *canvasFile, strconv.FormatInt(time.Now().Unix(), 10))).Start()
+
+	})
 
 	fmt.Printf("Server is running on %s\n", *address)
 	if err := http.ListenAndServe(*address, nil); err != nil {
