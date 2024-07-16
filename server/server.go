@@ -32,14 +32,17 @@ var (
 	canvas   Canvas
 	upgrader = websocket.Upgrader{
 		ReadBufferSize:  1024,
-		WriteBufferSize: 8192,
+		WriteBufferSize: 1024,
 	}
-	clients      = make([]*Client, 0)
+	// clients      = make([]*Client, 0)
+	clients      = make(map[string]*Client) // map of IP to Client
 	clientsMutex = &sync.Mutex{}
 )
 
 type Client struct {
 	Conn *websocket.Conn
+
+	LastPixelTimestamp int64
 
 	Mutex *sync.Mutex
 }
@@ -206,6 +209,30 @@ var changes = make([]byte, 0)
 var changesMutex = &sync.Mutex{}
 
 func wsHandler(w http.ResponseWriter, r *http.Request) {
+	ip := r.Header.Get("CF-Connecting-IPv6")
+
+	if ip == "" {
+		ip = r.Header.Get("CF-Connecting-IP")
+	}
+
+	if ip == "" {
+		ip = r.Header.Get("X-Real-IP")
+	}
+
+	if ip == "" {
+		ip = r.RemoteAddr
+	}
+
+	// fmt.Println("New connection from:", ip)
+
+	client := clients[ip]
+
+	if client != nil {
+		// fmt.Println("Client already connected, closing connection...")
+		w.WriteHeader(http.StatusTooManyRequests)
+		return
+	}
+
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		fmt.Println("Error upgrading connection:", err)
@@ -217,24 +244,23 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	client := &Client{
-		Conn:  conn,
+	client = &Client{
+		Conn: conn,
+
+		LastPixelTimestamp: 0,
+
 		Mutex: &sync.Mutex{},
 	}
 
+	// lock cho chắc
 	clientsMutex.Lock()
-	clients = append(clients, client)
+	clients[ip] = client
 	clientsMutex.Unlock()
 
 	conn.SetCloseHandler(
 		func(code int, text string) error {
 			clientsMutex.Lock()
-			for index, c := range clients {
-				if c == client {
-					clients = append(clients[:index], clients[index+1:]...)
-					break
-				}
-			}
+			clients[ip] = nil
 			clientsMutex.Unlock()
 			return nil
 		},
@@ -299,22 +325,21 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// func compactClientList() {
-// 	clientsMutex.Lock()
-// 	defer clientsMutex.Unlock()
+func compactClientList() {
+	newClients := make(map[string]*Client)
 
-// 	newClients := make([]*websocket.Conn, *connections)
+	clientsMutex.Lock()
+	defer clientsMutex.Unlock()
 
-// 	i := 0
-// 	for _, client := range clients {
-// 		if client != nil {
-// 			newClients[i] = client
-// 			i++
-// 		}
-// 	}
+	for ip, client := range clients {
+		if client == nil {
+			continue
+		}
+		newClients[ip] = client
+	}
 
-// 	clients = newClients
-// }
+	clients = newClients
+}
 
 func initCanvas() error {
 	if _, err := os.Stat(*canvasFile); err != nil {
@@ -419,7 +444,7 @@ func main() {
 		for {
 			time.Sleep(time.Duration(*pingInterval) * time.Second)
 			pingAll()
-			// compactClientList()
+			compactClientList()
 		}
 	}()
 
