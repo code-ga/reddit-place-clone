@@ -277,7 +277,9 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 	client = &Client{
 		Conn: conn,
 
-		LastPixelTimestamp: 0,
+		LastPixelTimestamp:   0,
+		LastMessageTimestamp: time.Now().Unix(),
+		LastPingTimestamp:    time.Now().Unix(),
 
 		Mutex: &sync.Mutex{},
 	}
@@ -477,6 +479,13 @@ func main() {
 			time.Sleep(time.Duration(*pingInterval) * time.Second)
 			pingAll()
 			compactClientList()
+		}
+	}()
+
+	go func() {
+		for {
+			time.Sleep(time.Duration(math.Round(float64(*pingInterval)/5)) * time.Second)
+			eliminateSleepers()
 		}
 	}()
 
