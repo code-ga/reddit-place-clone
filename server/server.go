@@ -7,6 +7,7 @@ import (
 	"image"
 	"image/color"
 	"image/png"
+	"math"
 	"net/http"
 	"os"
 	"os/exec"
@@ -42,7 +43,11 @@ var (
 type Client struct {
 	Conn *websocket.Conn
 
-	LastPixelTimestamp int64
+	LastPixelTimestamp   int64
+	LastMessageTimestamp int64
+	LastPingTimestamp    int64
+
+	Strikes uint8
 
 	Mutex *sync.Mutex
 }
@@ -167,6 +172,30 @@ func broadcast() {
 
 }
 
+func eliminateSleepers() {
+	clientsMutex.Lock()
+	defer clientsMutex.Unlock()
+
+	for ip, client := range clients {
+		if client == nil {
+			delete(clients, ip)
+			continue
+		}
+
+		if time.Now().Unix()-client.LastMessageTimestamp > int64(math.Round(float64(*pingInterval)/5)) {
+			client.Strikes++
+		} else {
+			client.Strikes = 0
+		}
+
+		if client.Strikes >= 3 { // 3 strikes and you're out
+			client.Conn.Close()
+			delete(clients, ip)
+		}
+	}
+
+}
+
 func pingAll() {
 	clientsMutex.Lock()
 	defer clientsMutex.Unlock()
@@ -182,6 +211,7 @@ func pingAll() {
 			if err := client.Conn.WriteMessage(websocket.PingMessage, []byte{}); err != nil {
 				client.Conn.Close()
 			}
+			client.LastPingTimestamp = time.Now().Unix()
 		}(client)
 	}
 
@@ -260,7 +290,7 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 	conn.SetCloseHandler(
 		func(code int, text string) error {
 			clientsMutex.Lock()
-			clients[ip] = nil
+			delete(clients, ip)
 			clientsMutex.Unlock()
 			return nil
 		},
@@ -294,6 +324,8 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 			conn.Close()
 			return
 		}
+
+		client.LastMessageTimestamp = time.Now().Unix()
 
 		if len(message) != 11 {
 			conn.Close()
