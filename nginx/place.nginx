@@ -9,19 +9,19 @@ server {
     index                   desktop.html;
 
     location /ws {
-        proxy_pass          http://place;
+        proxy_pass          http://place:8080;
         proxy_http_version  1.1;
         proxy_set_header    Upgrade $http_upgrade;
         proxy_set_header    Connection "upgrade";
     }
 
     location /place.png {
-        proxy_pass          http://place;
+        proxy_pass          http://place:8080;
     }
 
-    location /stats{
-        proxy_pass          http://place;
-        proxy_http_version  1.1;
-    }
+    # location /stats{
+    #     proxy_pass          http://place;
+    #     proxy_http_version  1.1;
+    # }
 
 }
