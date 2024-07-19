@@ -20,13 +20,19 @@ import (
 )
 
 var (
-	address      = flag.String("address", ":80", "Address to listen on")
-	width        = flag.Int("width", 1000, "Width of the canvas")
-	height       = flag.Int("height", 1000, "Height of the canvas")
+	address = flag.String("address", ":80", "Address to listen on")
+
+	width  = flag.Int("width", 1000, "Width of the canvas")
+	height = flag.Int("height", 1000, "Height of the canvas")
+
 	saveInterval = flag.Int("save-interval", 120, "Interval to save the canvas (in seconds)")
-	pingInterval = flag.Int("ping-interval", 30, "Interval to ping clients (in seconds)")
 	canvasFile   = flag.String("save-location", "place.png", "File to save the canvas to")
-	connections  = flag.Int("connections", 500000, "Maximum number of connections")
+
+	connections      = flag.Int("connections", 500000, "Maximum number of distinct IP connections")
+	connectionsPerIP = flag.Int("connections-per-ip", 3, "Maximum number of connections per IP")
+
+	pingInterval = flag.Int("ping-interval", 30, "Interval to ping clients (in seconds)")
+	strikesLimit = flag.Int("strikes-limit", 3, "Number of strikes before disconnecting client")
 )
 
 var (
@@ -35,8 +41,7 @@ var (
 		ReadBufferSize:  1024,
 		WriteBufferSize: 1024,
 	}
-	// clients      = make([]*Client, 0)
-	clients      = make(map[string]*Client) // map of IP to Client
+	clients      = make(map[string]*[]*Client) // map of IP to Client
 	clientsMutex = &sync.Mutex{}
 )
 
@@ -151,18 +156,20 @@ func broadcast() {
 	}
 
 	clientsMutex.Lock()
-	for _, client := range clients {
-		if client == nil {
-			continue
-		}
-
-		go func(client *Client) {
-			client.Mutex.Lock()
-			defer client.Mutex.Unlock()
-			if err := client.Conn.WriteMessage(websocket.BinaryMessage, changes); err != nil {
-				client.Conn.Close()
+	for _, realClients := range clients {
+		for _, client := range *realClients {
+			if client == nil {
+				continue
 			}
-		}(client)
+
+			go func(client *Client) {
+				client.Mutex.Lock()
+				defer client.Mutex.Unlock()
+				if err := client.Conn.WriteMessage(websocket.BinaryMessage, changes); err != nil {
+					client.Conn.Close()
+				}
+			}(client)
+		}
 	}
 	clientsMutex.Unlock()
 
@@ -176,21 +183,24 @@ func eliminateSleepers() {
 	clientsMutex.Lock()
 	defer clientsMutex.Unlock()
 
-	for ip, client := range clients {
-		if client == nil {
-			delete(clients, ip)
-			continue
-		}
+	for ip, realClients := range clients {
+		for _, client := range *realClients {
+			if client == nil {
+				delete(clients, ip)
+				continue
+			}
 
-		if time.Now().Unix()-client.LastMessageTimestamp > int64(math.Round(float64(*pingInterval)/5)) {
-			client.Strikes++
-		} else {
-			client.Strikes = 0
-		}
+			if time.Now().Unix()-client.LastMessageTimestamp > int64(math.Round(float64(*pingInterval)/5)) {
+				client.Strikes++
+			} else {
+				client.Strikes = 0
+			}
 
-		if client.Strikes >= 3 { // 3 strikes and you're out
-			client.Conn.Close()
-			delete(clients, ip)
+			if client.Strikes >= uint8(*strikesLimit) {
+				client.Conn.Close()
+				delete(clients, ip)
+			}
+
 		}
 	}
 
@@ -200,19 +210,21 @@ func pingAll() {
 	clientsMutex.Lock()
 	defer clientsMutex.Unlock()
 
-	for _, client := range clients {
-		if client == nil {
-			continue
-		}
-
-		go func(client *Client) {
-			client.Mutex.Lock()
-			defer client.Mutex.Unlock()
-			if err := client.Conn.WriteMessage(websocket.PingMessage, []byte{}); err != nil {
-				client.Conn.Close()
+	for _, realClients := range clients {
+		for _, client := range *realClients {
+			if client == nil {
+				continue
 			}
-			client.LastPingTimestamp = time.Now().Unix()
-		}(client)
+
+			go func(client *Client) {
+				client.Mutex.Lock()
+				defer client.Mutex.Unlock()
+				if err := client.Conn.WriteMessage(websocket.PingMessage, []byte{}); err != nil {
+					client.Conn.Close()
+				}
+				client.LastPingTimestamp = time.Now().Unix()
+			}(client)
+		}
 	}
 
 }
@@ -255,10 +267,18 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 
 	// fmt.Println("New connection from:", ip)
 
-	client := clients[ip]
+	currentClients := clients[ip]
 
-	if client != nil {
+	if len(*currentClients) >= *connectionsPerIP {
+		// too much connections
 		// fmt.Println("Client already connected, closing connection...")
+		w.WriteHeader(http.StatusTooManyRequests)
+		return
+	}
+
+	if len(clients) >= *connections {
+		// too much connections
+		// fmt.Println("Too many connections, closing connection...")
 		w.WriteHeader(http.StatusTooManyRequests)
 		return
 	}
@@ -269,12 +289,7 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if len(clients) >= *connections {
-		conn.Close()
-		return
-	}
-
-	client = &Client{
+	client := &Client{
 		Conn: conn,
 
 		LastPixelTimestamp:   0,
@@ -284,16 +299,22 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 		Mutex: &sync.Mutex{},
 	}
 
+	realClients := append(*currentClients, client)
+
 	// lock cho chắc
 	clientsMutex.Lock()
-	clients[ip] = client
+	clients[ip] = &realClients
 	clientsMutex.Unlock()
 
 	conn.SetCloseHandler(
 		func(code int, text string) error {
-			clientsMutex.Lock()
-			delete(clients, ip)
-			clientsMutex.Unlock()
+			for i, c := range realClients {
+				if c == client {
+					realClients[i] = nil
+					break
+				}
+			}
+
 			return nil
 		},
 	)
@@ -360,16 +381,23 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func compactClientList() {
-	newClients := make(map[string]*Client)
+	newClients := make(map[string]*[]*Client)
 
 	clientsMutex.Lock()
 	defer clientsMutex.Unlock()
 
-	for ip, client := range clients {
-		if client == nil {
-			continue
+	for ip, realClients := range clients {
+		var newRealClients []*Client
+
+		for _, client := range *realClients {
+			if client != nil {
+				newRealClients = append(newRealClients, client)
+			}
 		}
-		newClients[ip] = client
+
+		if len(newRealClients) > 0 {
+			newClients[ip] = &newRealClients
+		}
 	}
 
 	clients = newClients
