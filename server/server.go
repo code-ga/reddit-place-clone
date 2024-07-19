@@ -269,11 +269,13 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 
 	currentClients := clients[ip]
 
-	if len(*currentClients) >= *connectionsPerIP {
-		// too much connections
-		// fmt.Println("Client already connected, closing connection...")
-		w.WriteHeader(http.StatusTooManyRequests)
-		return
+	if currentClients != nil {
+		if len(*currentClients) >= *connectionsPerIP {
+			// too much connections
+			// fmt.Println("Client already connected, closing connection...")
+			w.WriteHeader(http.StatusTooManyRequests)
+			return
+		}
 	}
 
 	if len(clients) >= *connections {
