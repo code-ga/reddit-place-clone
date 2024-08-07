@@ -3,7 +3,6 @@ services:
     image: place
     build:
       context: ./server/
-      dockerfile: Dockerfile
     volumes:
       - ./data:/place
     restart: unless-stopped
@@ -12,7 +11,6 @@ services:
     image: place-nginx
     build:
       context: ./nginx/
-      dockerfile: Dockerfile
     ports:
       - "${PORT}:80"
     restart: unless-stopped
