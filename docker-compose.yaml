@@ -2,7 +2,7 @@ services:
   place:
     image: place
     build:
-      context: ./server/
+      context: ./server
     volumes:
       - ./data:/place
     restart: unless-stopped
@@ -10,7 +10,9 @@ services:
   nginx:
     image: place-nginx
     build:
-      context: ./nginx/
+      context: ./nginx
     ports:
       - "${PORT}:80"
     restart: unless-stopped
+    depends_on:
+      - place
