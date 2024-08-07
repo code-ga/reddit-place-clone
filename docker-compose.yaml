@@ -4,6 +4,7 @@ services:
     build:
       context: ./server/
       dockerfile: Dockerfile
+    command: ["--width", "2560", "--height", "1440", "--save-location", "/place/place.png", "--save_all_images","true"]
     volumes:
       - ./data:/place
     restart: unless-stopped
