@@ -5,8 +5,6 @@ services:
       context: ./server
     volumes:
       - ./data:/place
-    networks:
-      - ip6net
     restart: unless-stopped
 
   nginx:
@@ -18,7 +16,3 @@ services:
     restart: unless-stopped
     depends_on:
       - place
-
-networks:
-   ip6net:
-     enable_ipv6: true
