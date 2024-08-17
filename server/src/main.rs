@@ -12,7 +12,7 @@ use axum::Router;
 use clap::Parser as _;
 use helper::{ConfigArgs, Point, StadeData};
 use image::RgbImage;
-use image::io::Reader as ImageReader;
+use image::ImageReader;
 use lazy_static::lazy_static;
 use tokio::sync::Mutex;
 
@@ -162,9 +162,10 @@ async fn handle_socket(socket: WebSocket, stade_data: StadeData) {
                 Message::Binary(data) => {
                     let _ = stade_data.sender.send(Point::from_byte(&data));
                 },
-                Message::Ping(_) => {
-                    let _ = tx_sender_cl.send(msg.clone());
+                Message::Ping(data) => {
+                    let _ = tx_sender_cl.send(Message::Pong(data));
                 }
+                Message::Pong(_) => {}
                 Message::Close(_) => {
                     drop(tx_sender_cl);
                     notifyer_cp.notify_waiters();
@@ -184,10 +185,19 @@ async fn handle_socket(socket: WebSocket, stade_data: StadeData) {
             let _ = tx_sender_cl.send(Message::Binary(point.to_byte()));
         }
     });
+    let tx_sender_cl = tx_sender.clone();
+    let send_ping = tokio::spawn(async move {
+        loop {
+            tokio::time::sleep(std::time::Duration::from_secs(30)).await;
+            let r_send = tx_sender_cl.send(Message::Ping(vec![]));
+            if r_send.is_err() { break; }
+        }
+    });
     notifyer.notified().await;
     ws_receiver.abort();
     ws_sender.abort();
     sync_data.abort();
+    send_ping.abort();
     println!("Websocket context destroyed");
 }
 
