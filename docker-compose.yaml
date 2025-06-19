@@ -12,7 +12,7 @@ services:
     build:
       context: ./nginx
     ports:
-      - "${PORT}:8001"
+      - "${PORT}:80"
     restart: unless-stopped
     depends_on:
       - place
