@@ -1,5 +1,5 @@
 
-FROM rust:1.79.0-alpine 
+FROM rust:alpine 
 
 COPY . ./build
 
