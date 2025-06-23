@@ -56,8 +56,7 @@ async fn main() {
         loop {
             tokio::time::sleep(std::time::Duration::from_secs(Config.save_interval.unwrap_or(120))).await;
             println!("scheduled start save image");
-            let img_lock = img_save_clone.read().await;
-            let img = img_lock.to_owned();
+            let img = img_save_clone.read().await.to_owned();
             if Config.save_all_images.unwrap_or_default() {
                 save_old_image().await;
             }
@@ -75,7 +74,7 @@ async fn main() {
     tokio::spawn(async move {
         println!("start set pixel event listener");
         while let Some(ptr) = rx_set.recv().await {
-            let img_lock = image_cl.read().await;
+            let img_lock = image_cl.read().await.to_owned();
             if ptr.x >= img_lock.width() || ptr.y >= img_lock.height() { continue; }
             let _ = tx_noti.send(ptr.clone()).await;
             image_cl.write().await.put_pixel(ptr.x, ptr.y, ptr.color);
@@ -93,7 +92,7 @@ async fn main() {
     let _ = axum::serve(listener, app).with_graceful_shutdown(async move { 
         tokio::signal::ctrl_c().await.unwrap();
         println!("save image before exit");
-        let img = image.read().await;
+        let img = image.read().await.to_owned();
         if Config.save_all_images.unwrap_or_default() {
             save_old_image().await;
         }
@@ -120,7 +119,7 @@ async fn open_img(path: PathBuf) -> Result<RgbImage, Box<dyn std::error::Error>>
 }
 
 async fn load_old_image(old_image_path: PathBuf, image: Arc<RwLock<RgbImage>>) -> Result<(), Box<dyn std::error::Error>> {
-    let image_cl = image.read().await;
+    let image_cl = image.read().await.to_owned();
     let rgb_img = open_img(old_image_path).await?;
     let img_w = [image_cl.width(), rgb_img.width()].iter().min().unwrap().to_owned();
     let img_h = [image_cl.height(), rgb_img.height()].iter().min().unwrap().to_owned();
@@ -199,7 +198,7 @@ async fn handle_socket(socket: WebSocket, stade_data: StadeData) {
 }
 
 async fn place_image(State(stade_data): State<StadeData>) -> impl IntoResponse {
-    let img = stade_data.image.read().await;
+    let img = stade_data.image.read().await.to_owned();
     let mut crusor = std::io::Cursor::new(Vec::new());
     let _ = img.write_to(&mut crusor, image::ImageFormat::Png);
     let data = crusor.into_inner();
