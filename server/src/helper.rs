@@ -3,7 +3,7 @@ use std::{path::PathBuf, sync::Arc};
 use async_channel::Receiver;
 use clap::Parser;
 use image::RgbImage;
-use tokio::sync::{mpsc::UnboundedSender, Mutex};
+use tokio::sync::{mpsc::UnboundedSender, RwLock};
 
 #[derive(Parser, Debug, Clone)]
 pub struct ConfigArgs {
@@ -59,13 +59,13 @@ impl Point {
 
 #[derive(Debug, Clone)]
 pub struct StadeData {
-    pub image: Arc<Mutex<RgbImage>>,
+    pub image: Arc<RwLock<RgbImage>>,
     pub sender: UnboundedSender<Point>,
     pub receiver: Receiver<Point>
 }
 
 impl StadeData {
-    pub fn new(image: Arc<Mutex<RgbImage>>, sender: UnboundedSender<Point>, receiver: Receiver<Point>) -> Self {
+    pub fn new(image: Arc<RwLock<RgbImage>>, sender: UnboundedSender<Point>, receiver: Receiver<Point>) -> Self {
         Self { image, sender, receiver}
     }
 }

@@ -14,7 +14,7 @@ use helper::{ConfigArgs, Point, StadeData};
 use image::RgbImage;
 use image::ImageReader;
 use lazy_static::lazy_static;
-use tokio::sync::Mutex;
+use tokio::sync::RwLock;
 
 lazy_static! {
     static ref Config: ConfigArgs = ConfigArgs::parse();    
@@ -25,12 +25,14 @@ async fn main() {
     println!("loading image...");
     let img_w = Config.width.unwrap_or(1000);
     let img_h = Config.height.unwrap_or(1000);
-    let image = Arc::new(Mutex::new(RgbImage::new(img_w, img_h)));
+    let image = Arc::new(RwLock::new(RgbImage::new(img_w, img_h)));
+    let mut lock_w = image.write().await;
     for x in 0..img_w {
         for y in 0..img_h {
-            image.lock().await.put_pixel(x, y, image::Rgb([255, 255, 255]));
+            lock_w.put_pixel(x, y, image::Rgb([255, 255, 255]));
         }
     }
+    drop(lock_w);
     let img_path = Config.save_location.clone().unwrap_or(PathBuf::from("place.png"));
     if !img_path.to_str().unwrap().ends_with(".png") {
         panic!("image path must end with .png");
@@ -54,9 +56,8 @@ async fn main() {
         loop {
             tokio::time::sleep(std::time::Duration::from_secs(Config.save_interval.unwrap_or(120))).await;
             println!("scheduled start save image");
-            let img_lock = img_save_clone.lock().await;
+            let img_lock = img_save_clone.read().await;
             let img = img_lock.to_owned();
-            drop(img_lock);
             if Config.save_all_images.unwrap_or_default() {
                 save_old_image().await;
             }
@@ -74,11 +75,10 @@ async fn main() {
     tokio::spawn(async move {
         println!("start set pixel event listener");
         while let Some(ptr) = rx_set.recv().await {
-            let img_lock = image_cl.lock().await;
+            let img_lock = image_cl.read().await;
             if ptr.x >= img_lock.width() || ptr.y >= img_lock.height() { continue; }
-            drop(img_lock);
-            image_cl.lock().await.put_pixel(ptr.x, ptr.y, ptr.color);
-            let _ = tx_noti.send(ptr).await;
+            let _ = tx_noti.send(ptr.clone()).await;
+            image_cl.write().await.put_pixel(ptr.x, ptr.y, ptr.color);
         }
     });
     let s_data = StadeData::new(image.clone(), tx_set, rx_noti);
@@ -93,9 +93,7 @@ async fn main() {
     let _ = axum::serve(listener, app).with_graceful_shutdown(async move { 
         tokio::signal::ctrl_c().await.unwrap();
         println!("save image before exit");
-        let img_lock = image.lock().await;
-        let img = img_lock.to_owned();
-        drop(img_lock);
+        let img = image.read().await;
         if Config.save_all_images.unwrap_or_default() {
             save_old_image().await;
         }
@@ -121,17 +119,16 @@ async fn open_img(path: PathBuf) -> Result<RgbImage, Box<dyn std::error::Error>>
     Ok(rgb_img)
 }
 
-async fn load_old_image(old_image_path: PathBuf, image: Arc<Mutex<RgbImage>>) -> Result<(), Box<dyn std::error::Error>> {
-    let image_lock = image.lock().await;
-    let image_cl = image_lock.to_owned();
-    drop(image_lock);
+async fn load_old_image(old_image_path: PathBuf, image: Arc<RwLock<RgbImage>>) -> Result<(), Box<dyn std::error::Error>> {
+    let image_cl = image.read().await;
     let rgb_img = open_img(old_image_path).await?;
     let img_w = [image_cl.width(), rgb_img.width()].iter().min().unwrap().to_owned();
     let img_h = [image_cl.height(), rgb_img.height()].iter().min().unwrap().to_owned();
+    let mut lock_w = image.write().await;
     for x in 0..img_w {
         for y in 0..img_h {
             let pixel = rgb_img.get_pixel(x, y);
-            image.lock().await.put_pixel(x, y, *pixel);
+            lock_w.put_pixel(x, y, *pixel);
         }
     }
     Ok(())
@@ -202,11 +199,14 @@ async fn handle_socket(socket: WebSocket, stade_data: StadeData) {
 }
 
 async fn place_image(State(stade_data): State<StadeData>) -> impl IntoResponse {
-    let img_lock = stade_data.image.lock().await;
-    let img = img_lock.to_owned();
-    drop(img_lock);
+    let img = stade_data.image.read().await;
     let mut crusor = std::io::Cursor::new(Vec::new());
     let _ = img.write_to(&mut crusor, image::ImageFormat::Png);
     let data = crusor.into_inner();
-    Response::builder().header("content-type", "image/png").body(Body::from(data)).unwrap()
+    Response::builder()
+    .header("content-type", "image/png")
+    // Cors
+    .header("Access-Control-Allow-Origin", "*")
+    .header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+    .body(Body::from(data)).unwrap()
 }
