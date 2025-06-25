@@ -1,6 +1,7 @@
 mod helper;
 
 use std::path::PathBuf;
+use tokio::sync::broadcast::error::RecvError;
 use std::sync::Arc;
 
 use axum::body::Body;
@@ -27,7 +28,8 @@ async fn main() {
 
     let img_w = Config.width.unwrap_or(1000);
     let img_h = Config.height.unwrap_or(1000);
-    let s_data = StadeData::new(img_w, img_h);
+    let channel_size = Config.channel_size.unwrap_or(1024);
+    let s_data = StadeData::new(img_w, img_h, channel_size);
 
     let img_path = Config
         .save_location
@@ -138,16 +140,21 @@ async fn handle_socket(socket: WebSocket, stade_data: StadeData) {
     let notifyer = Arc::new(tokio::sync::Notify::new());
 
     let (tx_sender, mut rx_sender) = tokio::sync::mpsc::unbounded_channel::<Message>();
+    
     let notifyer_cp = notifyer.clone();
-
     let ws_sender = tokio::spawn(async move {
+        let notifyer_cp2 = notifyer_cp.clone();
         while let Some(msg) = rx_sender.recv().await {
-            let _ = sender.send(msg).await;
+            match sender.send(msg).await {
+                Ok(_) => {},
+                Err(_) => notifyer_cp2.notified().await
+            }
         }
     });
 
     let tx_sender_cl = tx_sender.clone();
     let stade_data_clone = stade_data.clone();
+    let notifyer_cp = notifyer.clone();
     let ws_receiver = tokio::spawn(async move {
         while let Some(Ok(msg)) = receiver.next().await {
             match msg.clone() {
@@ -173,23 +180,36 @@ async fn handle_socket(socket: WebSocket, stade_data: StadeData) {
     });
 
     let tx_sender_cl = tx_sender.clone();
+    let notifyer_cp = notifyer.clone();
     let sync_data = tokio::spawn(async move {
-        while let Ok(point) = stade_data.listen().recv().await {
-            let _ = tx_sender_cl.send(Message::Binary(point.to_byte()));
+        let mut data_receiver = stade_data.listen();
+        loop {
+            match data_receiver.recv().await {
+                Ok(point) => {
+                    if tx_sender_cl.send(Message::Binary(point.to_byte())).is_err() {
+                        notifyer_cp.notify_waiters();
+                        break;
+                    }
+                },
+                Err(RecvError::Lagged(num)) => {
+                    eprintln!("Lagged {} messages, skipping", num);
+                }
+                _ => ()
+            }
         }
     });
 
     let tx_sender_cl = tx_sender.clone();
     let send_ping = tokio::spawn(async move {
         loop {
-            tokio::time::sleep(std::time::Duration::from_secs(30)).await;
+            tokio::time::sleep(std::time::Duration::from_secs(10)).await;
             let r_send = tx_sender_cl.send(Message::Ping(vec![]));
             if r_send.is_err() {
                 break;
             }
         }
     });
-
+    
     notifyer.notified().await;
     ws_receiver.abort();
     ws_sender.abort();

@@ -27,3 +27,4 @@ clap = { version = "4", features = ["derive"] }
 image = "0.25.1"
 futures-util = "0"
 dashmap = "6.1.0"
+uuid = { version = "1.17.0", features = ["v4"] }
