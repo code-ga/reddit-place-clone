@@ -73,8 +73,7 @@ impl StadeData {
     }
 
     fn coordinates_to_index(&self, x: u32, y: u32) -> u32 {
-        let width = self.image_dashmap.len() as u32;
-        y * width + x
+        y * self.width + x
     }
 
     pub async fn set_pixel(&self, raw: &[u8]) {
