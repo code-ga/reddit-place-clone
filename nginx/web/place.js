@@ -5,12 +5,22 @@ class Place {
   #uiwrapper;
   #glWindow;
 
+  #dirty = false;
+
   constructor(glWindow) {
     this.#loaded = false;
     this.#socket = null;
     this.#loadingp = document.querySelector("#loading-p");
     this.#uiwrapper = document.querySelector("#ui-wrapper");
     this.#glWindow = glWindow;
+
+    setInterval(() => {
+      if (!this.#loaded) return;
+      if (!this.#dirty) return;
+      this.#dirty = false;
+
+      this.#glWindow.draw();
+    }, 1000 / 100);
   }
 
   async initConnection() {
@@ -136,7 +146,7 @@ class Place {
       offset += 11;
     }
 
-    this.#glWindow.draw();
+    this.#dirty = true;
   }
 
   async #setImage(data) {
